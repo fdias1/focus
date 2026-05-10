@@ -1,8 +1,8 @@
 node_modules/
 
 # desktop
-desktop/out/
-desktop/dist/
+**/out/
+**/dist/
 
 # server
 server/.next/
