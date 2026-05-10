@@ -15,7 +15,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.fdias1.focusclient",
       "infoPlist": {
-        "NSCameraUsageDescription": "Used to scan the QR code displayed by Focus Desktop."
+        "NSCameraUsageDescription": "Used to scan the QR code displayed by Focus Desktop.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -24,7 +25,11 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.fdias1.focusclient",
-      "permissions": ["CAMERA"]
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-camera",
@@ -37,9 +42,9 @@
       ]
     ],
     "extra": {
-      "serverUrl": "https://focus-server.vercel.app",
+      "serverUrl": "https://focus-server-three.vercel.app/",
       "eas": {
-        "projectId": "YOUR_EAS_PROJECT_ID"
+        "projectId": "176665f9-298e-4dba-aa28-11800dc9baac"
       }
     }
   }
