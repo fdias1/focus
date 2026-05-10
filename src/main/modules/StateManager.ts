@@ -6,6 +6,7 @@ import { InactivityDetector } from './InactivityDetector'
 import { ScreenScanner, Frame } from './ScreenScanner'
 import { hasSignificantChange, getTrayExclusionRegion } from './ChangeDetector'
 import { AlarmManager } from './AlarmManager'
+import { OverlayManager } from './OverlayManager'
 
 export class StateManager extends EventEmitter {
   private _current: AppState = 'off'
@@ -15,6 +16,7 @@ export class StateManager extends EventEmitter {
   private readonly inactivity = new InactivityDetector()
   private readonly scanner = new ScreenScanner()
   private readonly alarm = new AlarmManager()
+  private readonly overlay = new OverlayManager()
 
   constructor(private readonly config: ConfigStore) {
     super()
@@ -43,6 +45,7 @@ export class StateManager extends EventEmitter {
     this.inactivity.stop()
     this.scanner.stop()
     this.alarm.reset()
+    this.overlay.hide()
     this.prevFrame = null
     this.transition('off')
   }
@@ -59,6 +62,7 @@ export class StateManager extends EventEmitter {
     if (this._current === 'off') return
     this.scanner.stop()
     this.alarm.reset()
+    this.overlay.hide()
     this.prevFrame = null
     this.transition('active')
   }
@@ -68,7 +72,7 @@ export class StateManager extends EventEmitter {
 
     if (this.prevFrame) {
       const cfg = this.config.get()
-      const changed = hasSignificantChange(
+      const result = hasSignificantChange(
         this.prevFrame.data,
         frame.data,
         frame.width,
@@ -76,9 +80,13 @@ export class StateManager extends EventEmitter {
         cfg.changeSensitivity,
         getTrayExclusionRegion()
       )
-      if (changed && this._current !== 'alarm') {
-        this.alarm.trigger(cfg.alarmInterval)
-        this.transition('alarm')
+
+      if (result.changed) {
+        if (result.bbox) this.overlay.show(result.bbox)
+        if (this._current !== 'alarm') {
+          this.alarm.trigger(cfg.alarmInterval)
+          this.transition('alarm')
+        }
       }
     }
 
