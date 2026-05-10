@@ -32,7 +32,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>({
     inactivityThreshold: 30,
     snapshotInterval: 5,
-    changeSensitivity: 10,
+    changeSensitivity: 0.1,
     alarmInterval: 60
   })
 
@@ -80,8 +80,10 @@ export default function App() {
         <Setting
           label="Change sensitivity"
           value={config.changeSensitivity}
-          min={1}
-          max={100}
+          min={0.01}
+          max={1}
+          step={0.01}
+          decimals={2}
           unit="%"
           onChange={(v) => updateConfig({ changeSensitivity: v })}
         />
@@ -103,6 +105,8 @@ function Setting({
   value,
   min,
   max,
+  step = 1,
+  decimals = 0,
   unit,
   onChange
 }: {
@@ -110,6 +114,8 @@ function Setting({
   value: number
   min: number
   max: number
+  step?: number
+  decimals?: number
   unit: string
   onChange: (v: number) => void
 }) {
@@ -121,12 +127,13 @@ function Setting({
           type="range"
           min={min}
           max={max}
+          step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
           style={styles.slider}
         />
         <span style={styles.value}>
-          {value} {unit}
+          {value.toFixed(decimals)} {unit}
         </span>
       </div>
     </div>

@@ -4,14 +4,14 @@ import { AppConfig } from '../../shared/ipc-types'
 const DEFAULTS: AppConfig = {
   inactivityThreshold: 30,
   snapshotInterval: 5,
-  changeSensitivity: 10,
+  changeSensitivity: 0.1,
   alarmInterval: 60
 }
 
 const BOUNDS: Record<keyof AppConfig, [number, number]> = {
   inactivityThreshold: [5, 3600],
   snapshotInterval: [1, 60],
-  changeSensitivity: [1, 100],
+  changeSensitivity: [0.01, 1],
   alarmInterval: [10, 3600]
 }
 
