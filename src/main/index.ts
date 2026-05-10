@@ -47,6 +47,8 @@ function createConfigWindow(): void {
 app.whenReady().then(() => {
   const config = new ConfigStore()
   const state = new StateManager(config)
+  state.toggle() // start active on launch
+
   const tray = new TrayManager(state, () => {
     if (configWindow) {
       configWindow.focus()

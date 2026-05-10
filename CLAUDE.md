@@ -58,7 +58,7 @@ All time values are stored internally in **seconds**.
 - **No admin/root permissions.** Every feature must work with standard user permissions. Screen Recording on macOS is a user-granted permission (not admin) — request it via `systemPreferences.askForMediaAccess` on first use.
 - **No video recording.** ScreenScanner takes snapshots only; frames are never written to disk.
 - **Tray region exclusion.** ChangeDetector must never fire on changes in the system tray area (clock, etc.). The exclusion region is computed at runtime based on platform and screen resolution.
-- **App always starts in OFF state.** Do not persist the last on/off state.
+- **App always starts in ACTIVE state.** Do not persist the last on/off state.
 
 ## Testing
 
