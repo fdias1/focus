@@ -1,48 +1,10 @@
 import { BrowserWindow, screen } from 'electron'
 import { Region } from './ChangeDetector'
 
-const BORDER = 3   // px — red border thickness
-const PADDING = 10 // px — extra space around the tight bounding box
+const BORDER  = 3   // red border thickness in px
+const PADDING = 10  // extra space around the tight bounding box in px
 
-// Transparent, click-through, always-on-top window that draws a red
-// bounding box around the region where a screen change was detected.
-export class OverlayManager {
-  private window: BrowserWindow | null = null
-
-  show(bbox: Region): void {
-    // bbox coordinates come from the pixel buffer which is sized to
-    // display.bounds (logical pixels), so no scale-factor conversion needed.
-    const display = screen.getPrimaryDisplay()
-    const { x: screenX, y: screenY } = display.bounds
-
-    const x = screenX + Math.max(0, bbox.x - PADDING)
-    const y = screenY + Math.max(0, bbox.y - PADDING)
-    const width  = Math.min(bbox.width  + PADDING * 2, display.bounds.width)
-    const height = Math.min(bbox.height + PADDING * 2, display.bounds.height)
-
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.setBounds({ x, y, width, height })
-      return
-    }
-
-    this.window = new BrowserWindow({
-      x, y, width, height,
-      transparent: true,
-      frame: false,
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      resizable: false,
-      movable: false,
-      focusable: false,
-      hasShadow: false,
-      roundedCorners: false,
-      webPreferences: { nodeIntegration: false, contextIsolation: true }
-    })
-
-    this.window.setIgnoreMouseEvents(true)
-    this.window.setAlwaysOnTop(true, 'screen-saver')
-
-    const html = encodeURIComponent(`<!DOCTYPE html>
+const OVERLAY_HTML = encodeURIComponent(`<!DOCTYPE html>
 <html>
 <head><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -51,15 +13,61 @@ export class OverlayManager {
 </style></head>
 <body></body>
 </html>`)
-    this.window.loadURL(`data:text/html;charset=utf-8,${html}`)
 
-    this.window.on('closed', () => { this.window = null })
+function createOverlayWindow(x: number, y: number, width: number, height: number): BrowserWindow {
+  const win = new BrowserWindow({
+    x, y, width, height,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    hasShadow: false,
+    roundedCorners: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  })
+  win.setIgnoreMouseEvents(true)
+  win.setAlwaysOnTop(true, 'screen-saver')
+  // Exclude this window from desktopCapturer so it never appears in
+  // screen snapshots and cannot cause false-positive change detections.
+  win.setContentProtection(true)
+  win.loadURL(`data:text/html;charset=utf-8,${OVERLAY_HTML}`)
+  return win
+}
+
+export class OverlayManager {
+  private windows: BrowserWindow[] = []
+
+  // Hide and destroy all current overlay windows before a new scan.
+  hideAll(): void {
+    for (const win of this.windows) {
+      if (!win.isDestroyed()) win.close()
+    }
+    this.windows = []
   }
 
-  hide(): void {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.close()
+  // Show one bounty-box per detected region. Clears previous boxes first.
+  showAll(regions: Region[]): void {
+    this.hideAll()
+
+    const display = screen.getPrimaryDisplay()
+    const { x: screenX, y: screenY } = display.bounds
+
+    for (const bbox of regions) {
+      if (bbox.width <= 0 || bbox.height <= 0) continue
+
+      const x      = screenX + Math.max(0, bbox.x - PADDING)
+      const y      = screenY + Math.max(0, bbox.y - PADDING)
+      const width  = Math.min(bbox.width  + PADDING * 2, display.bounds.width)
+      const height = Math.min(bbox.height + PADDING * 2, display.bounds.height)
+
+      const win = createOverlayWindow(x, y, width, height)
+      win.on('closed', () => {
+        this.windows = this.windows.filter(w => w !== win)
+      })
+      this.windows.push(win)
     }
-    this.window = null
   }
 }

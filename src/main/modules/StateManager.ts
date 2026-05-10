@@ -45,7 +45,7 @@ export class StateManager extends EventEmitter {
     this.inactivity.stop()
     this.scanner.stop()
     this.alarm.reset()
-    this.overlay.hide()
+    this.overlay.hideAll()
     this.prevFrame = null
     this.transition('off')
   }
@@ -62,13 +62,17 @@ export class StateManager extends EventEmitter {
     if (this._current === 'off') return
     this.scanner.stop()
     this.alarm.reset()
-    this.overlay.hide()
+    this.overlay.hideAll()
     this.prevFrame = null
     this.transition('active')
   }
 
   private onFrame(frame: Frame): void {
     if (this._current !== 'monitoring' && this._current !== 'alarm') return
+
+    // Always hide overlays before comparing so previous boxes don't
+    // accumulate into the next bounding box calculation.
+    this.overlay.hideAll()
 
     if (this.prevFrame) {
       const cfg = this.config.get()
@@ -82,7 +86,7 @@ export class StateManager extends EventEmitter {
       )
 
       if (result.changed) {
-        if (result.bbox) this.overlay.show(result.bbox)
+        if (result.bbox) this.overlay.showAll([result.bbox])
         if (this._current !== 'alarm') {
           this.alarm.trigger(cfg.alarmInterval)
           this.transition('alarm')
