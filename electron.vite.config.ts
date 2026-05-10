@@ -12,7 +12,15 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/preload/index.ts'),
+          selector: resolve('src/preload/selector.ts')
+        }
+      }
+    }
   },
   renderer: {
     plugins: [react()],

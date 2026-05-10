@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AppConfig, AppState } from '../../shared/ipc-types'
+import { AppConfig, AppState, Region } from '../../shared/ipc-types'
 
 const STATE_LABEL: Record<AppState, string> = {
   off: 'Off',
@@ -22,6 +22,7 @@ declare global {
       toggle: () => Promise<void>
       getConfig: () => Promise<AppConfig>
       setConfig: (partial: Partial<AppConfig>) => Promise<void>
+      startAreaSelection: () => Promise<Region | null>
       onStateChanged: (cb: (state: AppState) => void) => () => void
     }
   }
@@ -33,8 +34,10 @@ export default function App() {
     inactivityThreshold: 30,
     snapshotInterval: 5,
     changeSensitivity: 0.1,
-    alarmInterval: 60
+    alarmInterval: 60,
+    watchArea: null
   })
+  const [selecting, setSelecting] = useState(false)
 
   useEffect(() => {
     window.focusApp.getState().then(setState)
@@ -47,6 +50,32 @@ export default function App() {
     setConfig(next)
     window.focusApp.setConfig(partial)
   }
+
+  async function handleWatchAreaToggle(checked: boolean) {
+    if (!checked) {
+      updateConfig({ watchArea: null })
+      return
+    }
+    // Start selection; config window hides while user draws
+    setSelecting(true)
+    const region = await window.focusApp.startAreaSelection()
+    setSelecting(false)
+    if (region) {
+      setConfig((prev) => ({ ...prev, watchArea: region }))
+      // config is already saved in main; just sync local state
+    }
+  }
+
+  async function handleEditWatchArea() {
+    setSelecting(true)
+    const region = await window.focusApp.startAreaSelection()
+    setSelecting(false)
+    if (region) {
+      setConfig((prev) => ({ ...prev, watchArea: region }))
+    }
+  }
+
+  const watchAreaSet = config.watchArea !== null
 
   return (
     <div style={styles.container}>
@@ -95,6 +124,35 @@ export default function App() {
           unit="s"
           onChange={(v) => updateConfig({ alarmInterval: v })}
         />
+
+        {/* Watch area */}
+        <div style={styles.row}>
+          <div style={styles.watchAreaRow}>
+            <label style={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={watchAreaSet}
+                disabled={selecting}
+                onChange={(e) => handleWatchAreaToggle(e.target.checked)}
+                style={styles.checkbox}
+              />
+              <span style={styles.label}>Watch area</span>
+            </label>
+            {watchAreaSet && !selecting && (
+              <button style={styles.editBtn} onClick={handleEditWatchArea}>
+                Edit
+              </button>
+            )}
+            {selecting && (
+              <span style={styles.selectingHint}>selecting…</span>
+            )}
+          </div>
+          {watchAreaSet && config.watchArea && (
+            <span style={styles.watchAreaInfo}>
+              {config.watchArea.width} × {config.watchArea.height} px at ({config.watchArea.x}, {config.watchArea.y})
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -205,5 +263,41 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#6b7280',
     minWidth: '52px',
     textAlign: 'right'
+  },
+  watchAreaRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    cursor: 'pointer'
+  },
+  checkbox: {
+    width: '15px',
+    height: '15px',
+    cursor: 'pointer'
+  },
+  editBtn: {
+    fontSize: '12px',
+    fontWeight: 500,
+    padding: '3px 10px',
+    borderRadius: '6px',
+    border: '1px solid #d1d5db',
+    background: '#f9fafb',
+    color: '#374151',
+    cursor: 'pointer'
+  },
+  selectingHint: {
+    fontSize: '12px',
+    color: '#6b7280',
+    fontStyle: 'italic'
+  },
+  watchAreaInfo: {
+    fontSize: '11px',
+    color: '#9ca3af',
+    paddingLeft: '21px'
   }
 }

@@ -1,11 +1,7 @@
 import { screen } from 'electron'
+import { Region } from '../../shared/ipc-types'
 
-export interface Region {
-  x: number
-  y: number
-  width: number
-  height: number
-}
+export type { Region }
 
 export interface ChangeResult {
   changed: boolean
@@ -41,13 +37,15 @@ function pixelInRegion(px: number, py: number, region: Region): boolean {
 
 // Returns whether the changed area exceeds sensitivityPct, plus the bounding box
 // of all changed pixels in the coordinate space of the supplied pixel buffer.
+// When watchArea is provided, only pixels within that region are considered.
 export function hasSignificantChange(
   prev: Buffer,
   curr: Buffer,
   width: number,
   height: number,
   sensitivityPct: number,
-  trayRegion: Region = getTrayExclusionRegion()
+  trayRegion: Region = getTrayExclusionRegion(),
+  watchArea: Region | null = null
 ): ChangeResult {
   const bytesPerPixel = 4 // RGBA
   const tolerance = 50 // per-channel tolerance to ignore minor rendering noise
@@ -61,6 +59,7 @@ export function hasSignificantChange(
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
+      if (watchArea && !pixelInRegion(x, y, watchArea)) continue
       if (pixelInRegion(x, y, trayRegion)) continue
       totalPixels++
       const i = (y * width + x) * bytesPerPixel

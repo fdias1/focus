@@ -3,6 +3,7 @@ import { join } from 'path'
 import { ConfigStore } from './modules/ConfigStore'
 import { StateManager } from './modules/StateManager'
 import { TrayManager } from './modules/TrayManager'
+import { selectArea } from './modules/AreaSelector'
 import { IPC, AppConfig } from '../shared/ipc-types'
 
 // Start as a background/accessory app — no dock icon, no cmd+tab entry.
@@ -20,7 +21,7 @@ function createConfigWindow(): void {
 
   configWindow = new BrowserWindow({
     width: 400,
-    height: 480,
+    height: 520,
     resizable: false,
     title: 'Focus — Settings',
     webPreferences: {
@@ -62,6 +63,13 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.GET_CONFIG, () => config.get())
   ipcMain.handle(IPC.SET_CONFIG, (_event, partial: Partial<AppConfig>) => {
     config.set(partial)
+  })
+  ipcMain.handle(IPC.START_AREA_SELECTION, async () => {
+    configWindow?.hide()
+    const region = await selectArea()
+    configWindow?.show()
+    config.set({ watchArea: region })
+    return region
   })
 
   state.on('stateChanged', (newState) => {

@@ -78,7 +78,8 @@ export class StateManager extends EventEmitter {
         frame.width,
         frame.height,
         cfg.changeSensitivity,
-        getTrayExclusionRegion()
+        getTrayExclusionRegion(),
+        cfg.watchArea
       )
 
       if (result.changed) {
