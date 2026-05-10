@@ -1,5 +1,12 @@
 {
   "name": "focus",
   "private": true,
-  "workspaces": ["desktop", "server", "client"]
+  "workspaces": [
+    "desktop",
+    "server",
+    "client"
+  ],
+  "devDependencies": {
+    "drizzle-orm": "^0.45.2"
+  }
 }
