@@ -5,9 +5,19 @@ import { StateManager } from './modules/StateManager'
 import { TrayManager } from './modules/TrayManager'
 import { IPC, AppConfig } from '../shared/ipc-types'
 
+// Start as a background/accessory app — no dock icon, no cmd+tab entry.
+// setActivationPolicy is macOS-only; on other platforms this is a no-op.
+if (process.platform === 'darwin') {
+  app.setActivationPolicy('accessory')
+}
+
 let configWindow: BrowserWindow | null = null
 
 function createConfigWindow(): void {
+  if (process.platform === 'darwin') {
+    app.setActivationPolicy('regular')
+  }
+
   configWindow = new BrowserWindow({
     width: 400,
     height: 480,
@@ -28,6 +38,9 @@ function createConfigWindow(): void {
 
   configWindow.on('closed', () => {
     configWindow = null
+    if (process.platform === 'darwin') {
+      app.setActivationPolicy('accessory')
+    }
   })
 }
 
