@@ -1,7 +1,7 @@
 import { db } from '@/db'
 import { clientDevices, webPushSubscriptions } from '@/db/schema'
 import { err, json } from '@/lib/auth'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 const Body = z.object({
@@ -34,10 +34,26 @@ export async function POST(req: Request) {
     .limit(1)
   if (!client) return err('client not found', 404)
 
-  await db
-    .insert(webPushSubscriptions)
-    .values({ clientId, subscription: JSON.stringify(subscription) })
-    .onConflictDoNothing()
+  // Remove any existing subscription for this client with the same endpoint.
+  // This handles browser-side key rotation and re-installation on home screen —
+  // the endpoint stays the same but keys may change, so we always store the latest.
+  const existing = await db
+    .select({ id: webPushSubscriptions.id, subscription: webPushSubscriptions.subscription })
+    .from(webPushSubscriptions)
+    .where(eq(webPushSubscriptions.clientId, clientId))
+
+  const stale = existing.filter((row) => {
+    try { return JSON.parse(row.subscription).endpoint === subscription.endpoint }
+    catch { return false }
+  })
+
+  if (stale.length > 0) {
+    await db
+      .delete(webPushSubscriptions)
+      .where(inArray(webPushSubscriptions.id, stale.map((r) => r.id)))
+  }
+
+  await db.insert(webPushSubscriptions).values({ clientId, subscription: JSON.stringify(subscription) })
 
   return json({ ok: true }, 201)
 }

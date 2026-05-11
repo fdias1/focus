@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import { screen } from 'electron'
 import { AppConfig, AppState } from '../../shared/ipc-types'
 import { ConfigStore } from './ConfigStore'
 import { WakeLockManager } from './WakeLockManager'
@@ -131,6 +132,12 @@ export class StateManager extends EventEmitter {
           }
           this.alarm.trigger(cfg.alarmInterval)
           this.transition('alarm')
+
+          // Darken every display that isn't the one that triggered the alarm.
+          // This ensures all screens are obscured even if they have no changes.
+          for (const d of screen.getAllDisplays()) {
+            if (d.id !== frame.display.id) this.overlay.darken(d)
+          }
         }
       }
     }

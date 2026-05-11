@@ -1,6 +1,10 @@
 import { BrowserWindow, Display } from 'electron'
 import { ChunkGrid } from './ChangeDetector'
 
+// A 1×1 fully-inactive grid — used to create a solid-dark overlay on a display
+// that has no detected changes (e.g. non-triggering displays in a multi-monitor setup).
+const DARK_GRID: ChunkGrid = { cols: 1, rows: 1, active: new Uint8Array(1) }
+
 // One full-screen overlay window per display.
 // Active chunks (changed pixels) are left transparent; inactive chunks receive a
 // dark 30 % opacity overlay, so only the areas that actually changed remain visible.
@@ -121,6 +125,14 @@ export class OverlayManager {
       this.redraw(entry)
     } else {
       entry.pendingDraw = true
+    }
+  }
+
+  // Creates a fully-dark overlay on a display that has no active chunks.
+  // No-op if an overlay already exists for this display.
+  darken(display: Display): void {
+    if (!this.entries.has(display.id)) {
+      this.update(DARK_GRID, display)
     }
   }
 

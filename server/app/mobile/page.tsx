@@ -148,11 +148,20 @@ export default function MobilePage() {
       .then(() => fetchPairings(id))
       .finally(() => setLoading(false))
 
-    // Check if already subscribed
+    // Check if already subscribed and re-sync with server on every load.
+    // This handles browser-side key rotation and re-installation on home screen.
     if (swContainer && 'PushManager' in window) {
-      navigator.serviceWorker.ready.then((reg) =>
-        reg.pushManager.getSubscription().then((sub) => setSubscribed(!!sub))
-      )
+      navigator.serviceWorker.ready.then(async (reg) => {
+        const sub = await reg.pushManager.getSubscription()
+        setSubscribed(!!sub)
+        if (sub) {
+          fetch('/api/web-push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId: id, subscription: sub.toJSON() })
+          }).catch(() => {})
+        }
+      })
     }
 
     return cleanup
