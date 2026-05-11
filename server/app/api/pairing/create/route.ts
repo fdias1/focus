@@ -1,6 +1,7 @@
 import { db } from '@/db'
 import { pairingTokens } from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
+import { lt } from 'drizzle-orm'
 import { z } from 'zod'
 
 const Body = z.object({
@@ -25,11 +26,8 @@ export async function POST(req: Request) {
   const token = randomToken()
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
 
-  // Clean up expired tokens for this desktop before creating a new one
-  await db.delete(pairingTokens).where(
-    // @ts-expect-error: drizzle lt on timestamp
-    (t: typeof pairingTokens) => t.expiresAt < new Date()
-  )
+  // Clean up expired tokens before creating a new one
+  await db.delete(pairingTokens).where(lt(pairingTokens.expiresAt, new Date()))
 
   await db
     .insert(pairingTokens)
