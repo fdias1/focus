@@ -7,13 +7,14 @@ import {
 } from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
 import { sendWebPush } from '@/lib/webpush'
-import { escapeMarkdownV2, sendTelegramMessage } from '@/lib/telegram'
+import { escapeMarkdownV2, sendTelegramMessage, sendTelegramPhoto } from '@/lib/telegram'
 import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 const Body = z.object({
   desktopId: z.string().uuid(),
-  apiKey: z.string().min(1)
+  apiKey: z.string().min(1),
+  imageBase64: z.string().optional()
 })
 
 export async function POST(req: Request) {
@@ -22,6 +23,10 @@ export async function POST(req: Request) {
 
   const desktopId = await validateDesktop(parsed.data)
   if (!desktopId) return err('unauthorized', 401)
+
+  const photo = parsed.data.imageBase64
+    ? Buffer.from(parsed.data.imageBase64, 'base64')
+    : null
 
   const paired = await db
     .select({
@@ -91,7 +96,9 @@ export async function POST(req: Request) {
     tgPaired.map(async (p) => {
       const label = p.nickname ? `"${p.nickname}"` : desktopLabel
       const text = `🔔 *Focus* \\— change detected on ${escapeMarkdownV2(label)}`
-      const res = await sendTelegramMessage(p.chatId, text)
+      const res = photo
+        ? await sendTelegramPhoto(p.chatId, photo, text)
+        : await sendTelegramMessage(p.chatId, text)
       if (
         res.statusCode === 403 ||
         (res.statusCode === 400 && /chat not found/i.test(res.description ?? ''))

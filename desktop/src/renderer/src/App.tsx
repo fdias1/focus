@@ -26,6 +26,7 @@ declare global {
     focusApp: {
       getState: () => Promise<AppState>
       toggle: () => Promise<void>
+      forceMonitoring: () => Promise<void>
       getConfig: () => Promise<AppConfig>
       setConfig: (partial: Partial<AppConfig>) => Promise<void>
       startAreaSelection: () => Promise<WatchArea | null>
@@ -49,7 +50,8 @@ export default function App() {
     alarmInterval: 60,
     watchAreas: [],
     localNotifications: true,
-    remoteNotifications: false
+    remoteNotifications: false,
+    telegramScreenshots: false
   })
   const [displays, setDisplays] = useState<DisplayInfo[]>([])
   const [selecting, setSelecting] = useState(false)
@@ -122,6 +124,14 @@ export default function App() {
 
       <button style={styles.toggle} onClick={() => window.focusApp.toggle()}>
         {state === 'off' ? 'Turn On' : 'Turn Off'}
+      </button>
+
+      <button
+        style={{ ...styles.toggle, opacity: state === 'active' ? 1 : 0.4 }}
+        disabled={state !== 'active'}
+        onClick={() => window.focusApp.forceMonitoring()}
+      >
+        Start Monitoring Now
       </button>
 
       {screenPermission && screenPermission !== 'granted' && (
@@ -211,6 +221,14 @@ export default function App() {
         </div>
         {pairError && (
           <p style={styles.errorMsg}>{pairError}</p>
+        )}
+
+        {config.remoteNotifications && (
+          <Toggle
+            label="Send screenshots to Telegram"
+            checked={config.telegramScreenshots}
+            onChange={(v) => updateConfig({ telegramScreenshots: v })}
+          />
         )}
 
         {/* Watch areas */}

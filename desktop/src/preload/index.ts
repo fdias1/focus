@@ -10,6 +10,7 @@ export interface DisplayInfo {
 contextBridge.exposeInMainWorld('focusApp', {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC.GET_STATE),
   toggle: (): Promise<void> => ipcRenderer.invoke(IPC.TOGGLE),
+  forceMonitoring: (): Promise<void> => ipcRenderer.invoke(IPC.FORCE_MONITORING),
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke(IPC.GET_CONFIG),
   setConfig: (config: Partial<AppConfig>): Promise<void> =>
     ipcRenderer.invoke(IPC.SET_CONFIG, config),

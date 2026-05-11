@@ -1,6 +1,6 @@
 import { db } from '@/db'
-import { pairingTokens, telegramChats, telegramPairings } from '@/db/schema'
-import { and, eq, gt, sql } from 'drizzle-orm'
+import { desktopDevices, pairingTokens, telegramChats, telegramPairings } from '@/db/schema'
+import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { escapeMarkdownV2 } from './telegram'
 
 const ID8_RE = /^[0-9a-f]{8}$/i
@@ -28,8 +28,26 @@ export function helpReply(): string {
     '`/pair <code> [nickname]` — pair this chat with a desktop',
     '`/unpair <id>` — remove a pairing \\(id from /list\\)',
     '`/list` — show all paired desktops',
+    '`/monitor` — start monitoring on all paired desktops',
     '`/help` — show this message'
   ].join('\n')
+}
+
+export async function handleMonitor(chatId: number): Promise<string> {
+  const paired = await db
+    .select({ desktopId: telegramPairings.desktopId })
+    .from(telegramPairings)
+    .where(eq(telegramPairings.chatId, chatId))
+
+  if (paired.length === 0) return 'No paired desktops\\. Use `/pair <code>` first\\.'
+
+  const ids = paired.map((p) => p.desktopId)
+  await db
+    .update(desktopDevices)
+    .set({ pendingMonitorAt: new Date() })
+    .where(inArray(desktopDevices.id, ids))
+
+  return `✓ Triggered monitoring on ${ids.length} desktop\\(s\\)\\.`
 }
 
 export async function handlePair(

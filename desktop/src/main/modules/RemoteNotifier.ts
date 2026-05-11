@@ -8,15 +8,22 @@ import { SERVER_URL } from './constants'
 export class RemoteNotifier {
   constructor(private readonly config: ConfigStore) {}
 
-  /** Notify paired devices that a screen change was detected. */
-  notify(): void {
+  /**
+   * Notify paired devices that a screen change was detected. When `pngBuffer`
+   * is provided, the server forwards it as an attached photo to Telegram chats
+   * (web-push subscribers still receive the same text-only payload).
+   */
+  notify(pngBuffer?: Buffer): void {
     const { desktopId, apiKey } = this.config.getServerCredentials()
     if (!desktopId || !apiKey) return
+
+    const body: Record<string, unknown> = { desktopId, apiKey }
+    if (pngBuffer) body.imageBase64 = pngBuffer.toString('base64')
 
     fetch(`${SERVER_URL}/api/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ desktopId, apiKey })
+      body: JSON.stringify(body)
     }).catch(() => {})
   }
 

@@ -66,6 +66,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(IPC.GET_STATE, () => state.current)
   ipcMain.handle(IPC.TOGGLE, () => state.toggle())
+  ipcMain.handle(IPC.FORCE_MONITORING, () => state.forceMonitoring())
   ipcMain.handle(IPC.GET_CONFIG, () => config.get())
   ipcMain.handle(IPC.SET_CONFIG, (_event, partial: Partial<AppConfig>) => {
     config.set(partial)

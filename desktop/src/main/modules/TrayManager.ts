@@ -39,6 +39,11 @@ export class TrayManager {
         label: isOn ? 'Turn Off' : 'Turn On',
         click: () => this.state.toggle()
       },
+      {
+        label: 'Start Monitoring Now',
+        enabled: this.state.current === 'active',
+        click: () => this.state.forceMonitoring()
+      },
       { label: 'Settings...', click: () => this.openSettings() },
       { type: 'separator' },
       { label: 'Quit Focus', role: 'quit' }

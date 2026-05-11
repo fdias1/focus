@@ -39,6 +39,7 @@ await call('setMyCommands', {
     { command: 'pair', description: 'Pair this chat with a desktop (uses code from the app)' },
     { command: 'unpair', description: 'Remove a desktop pairing by id' },
     { command: 'list', description: 'List all paired desktops' },
+    { command: 'monitor', description: 'Start monitoring on all paired desktops' },
     { command: 'help', description: 'Show help' }
   ]
 })

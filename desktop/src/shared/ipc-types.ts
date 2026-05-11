@@ -23,12 +23,14 @@ export interface AppConfig {
   watchAreas: WatchArea[]      // empty = monitor all displays at full
   localNotifications: boolean  // OS sound alarm, default true
   remoteNotifications: boolean // push to paired mobiles, default false
+  telegramScreenshots: boolean // attach a screenshot to Telegram alerts, default false
 }
 
 export const IPC = {
   GET_STATE: 'focus:get-state',
   STATE_CHANGED: 'focus:state-changed',
   TOGGLE: 'focus:toggle',
+  FORCE_MONITORING: 'focus:force-monitoring',
   GET_CONFIG: 'focus:get-config',
   SET_CONFIG: 'focus:set-config',
   START_AREA_SELECTION: 'focus:start-area-selection',

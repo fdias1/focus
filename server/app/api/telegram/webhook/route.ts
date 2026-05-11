@@ -1,6 +1,7 @@
 import { sendTelegramMessage } from '@/lib/telegram'
 import {
   handleList,
+  handleMonitor,
   handlePair,
   handleUnpair,
   helpReply,
@@ -62,6 +63,9 @@ export async function POST(req: Request): Promise<Response> {
         break
       case '/list':
         reply = await handleList(chatId)
+        break
+      case '/monitor':
+        reply = await handleMonitor(chatId)
         break
       default:
         reply = 'Unknown command\\. Try /help\\.'

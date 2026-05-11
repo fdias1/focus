@@ -19,7 +19,7 @@ function sanitizeWatchAreas(raw: unknown): WatchArea[] {
 }
 
 type NumericKey = 'inactivityThreshold' | 'snapshotInterval' | 'changeSensitivity' | 'alarmInterval'
-type BooleanKey = 'localNotifications' | 'remoteNotifications'
+type BooleanKey = 'localNotifications' | 'remoteNotifications' | 'telegramScreenshots'
 
 const NUMERIC_DEFAULTS: Record<NumericKey, number> = {
   inactivityThreshold: 30,
@@ -37,7 +37,8 @@ const BOUNDS: Record<NumericKey, [number, number]> = {
 
 const BOOLEAN_DEFAULTS: Record<BooleanKey, boolean> = {
   localNotifications: true,
-  remoteNotifications: false
+  remoteNotifications: false,
+  telegramScreenshots: false
 }
 
 const NUMERIC_KEYS: NumericKey[] = [
@@ -46,7 +47,7 @@ const NUMERIC_KEYS: NumericKey[] = [
   'changeSensitivity',
   'alarmInterval'
 ]
-const BOOLEAN_KEYS: BooleanKey[] = ['localNotifications', 'remoteNotifications']
+const BOOLEAN_KEYS: BooleanKey[] = ['localNotifications', 'remoteNotifications', 'telegramScreenshots']
 
 interface StoreSchema extends Record<NumericKey, number>, Record<BooleanKey, boolean> {
   watchAreas: WatchArea[]
@@ -78,7 +79,8 @@ export class ConfigStore {
       alarmInterval: this.clamp('alarmInterval', this.store.get('alarmInterval')),
       watchAreas: sanitizeWatchAreas(this.store.get('watchAreas')),
       localNotifications: this.store.get('localNotifications'),
-      remoteNotifications: this.store.get('remoteNotifications')
+      remoteNotifications: this.store.get('remoteNotifications'),
+      telegramScreenshots: this.store.get('telegramScreenshots')
     }
   }
 

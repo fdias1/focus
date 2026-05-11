@@ -1,11 +1,12 @@
 import { EventEmitter } from 'events'
-import { desktopCapturer, screen, systemPreferences, shell, Display } from 'electron'
+import { desktopCapturer, screen, systemPreferences, shell, Display, NativeImage } from 'electron'
 
 export interface Frame {
   data: Buffer
   width: number      // physical pixels
   height: number
   display: Display   // the Electron Display this frame belongs to
+  image: NativeImage // raw NativeImage so callers can encode (PNG, etc.) on demand
 }
 
 export function getScreenPermissionStatus(): 'granted' | 'denied' | 'not-determined' {
@@ -112,7 +113,8 @@ export class ScreenScanner extends EventEmitter {
           data: image.getBitmap(),
           width,
           height,
-          display
+          display,
+          image
         }
         this.emit('frame', frame)
       }
