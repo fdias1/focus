@@ -26,18 +26,22 @@ const OVERLAY_HTML = encodeURIComponent(`<!DOCTYPE html>
     c.height = window.innerHeight;
     var cw = c.width  / cols;
     var ch = c.height / rows;
-    ctx.clearRect(0, 0, c.width, c.height);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    // Fill everything dark first, then cut out the active chunks.
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.clearRect(0, 0, 0, 0); // no-op, just keeps intent clear
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,1)';
     for (var i = 0; i < active.length; i++) {
-      if (!active[i]) {
+      if (active[i]) {
         var col = i % cols;
         var row = Math.floor(i / cols);
-        ctx.fillRect(
-          Math.floor(col * cw), Math.floor(row * ch),
-          Math.ceil(cw),        Math.ceil(ch)
-        );
+        // Use exact floats so adjacent chunks share an edge with no gap or overlap.
+        var x0 = col * cw, y0 = row * ch;
+        ctx.fillRect(x0, y0, (col + 1) * cw - x0, (row + 1) * ch - y0);
       }
     }
+    ctx.globalCompositeOperation = 'source-over';
   };
 </script>
 </body>
