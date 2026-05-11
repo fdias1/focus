@@ -23,7 +23,7 @@ function createConfigWindow(): void {
 
   configWindow = new BrowserWindow({
     width: 400,
-    height: 560,
+    height: 610,
     resizable: false,
     title: 'Focus — Settings',
     webPreferences: {

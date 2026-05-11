@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import QRCode from 'qrcode'
 import { ConfigStore } from './ConfigStore'
+import { ensureDesktopRegistered } from './DesktopRegistrar'
 import { SERVER_URL } from './constants'
 
 let qrWindow: BrowserWindow | null = null
@@ -49,6 +50,12 @@ export async function openQRWindow(config: ConfigStore): Promise<void> {
   if (qrWindow && !qrWindow.isDestroyed()) {
     qrWindow.focus()
     return
+  }
+
+  // Credentials may not be ready if startup registration hasn't finished yet.
+  // Try once more synchronously before giving up.
+  if (!config.getServerCredentials().desktopId) {
+    await ensureDesktopRegistered(config)
   }
 
   const { desktopId, apiKey } = config.getServerCredentials()
