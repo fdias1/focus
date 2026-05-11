@@ -56,6 +56,8 @@ export default function MobilePage() {
   const [status, setStatus] = useState('')
   const [notifState, setNotifState] = useState<'unknown' | 'granted' | 'denied' | 'unsupported'>('unknown')
   const [subscribed, setSubscribed] = useState(false)
+  const [pushError, setPushError] = useState('')
+  const [subscribing, setSubscribing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [cameraError, setCameraError] = useState('')
 
@@ -114,27 +116,62 @@ export default function MobilePage() {
   // -------------------------------------------------------------------------
 
   async function subscribePush() {
+    setPushError('')
+    setSubscribing(true)
     try {
-      const reg = await navigator.serviceWorker.ready
-      const keyRes = await fetch('/api/web-push/vapid-key')
-      const { publicKey } = await keyRes.json()
+      // Step 1: ask for permission explicitly.
+      // Safari requires this call before pushManager.subscribe().
+      // Must originate from a user gesture — this is called from onClick, so it's valid.
+      const permission = await Notification.requestPermission()
+      if (permission === 'denied') {
+        setNotifState('denied')
+        return
+      }
+      if (permission !== 'granted') {
+        // User dismissed the prompt without choosing — don't mark as denied.
+        return
+      }
+      setNotifState('granted')
 
+      // Step 2: fetch VAPID public key from server.
+      const keyRes = await fetch('/api/web-push/vapid-key')
+      if (!keyRes.ok) {
+        setPushError('Server error fetching VAPID key. Make sure VAPID_PUBLIC_KEY is set in Vercel env vars.')
+        return
+      }
+      const { publicKey } = await keyRes.json() as { publicKey?: string }
+      if (!publicKey) {
+        setPushError('Push notifications are not configured on the server (missing VAPID key).')
+        return
+      }
+
+      // Step 3: subscribe via Service Worker.
+      const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as ArrayBuffer
       })
 
-      await fetch('/api/web-push/subscribe', {
+      // Step 4: save subscription on server.
+      const saveRes = await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, subscription: sub.toJSON() })
       })
+      if (!saveRes.ok) {
+        setPushError('Subscribed locally but failed to save to server. Try again.')
+        return
+      }
 
       setSubscribed(true)
-      setNotifState('granted')
     } catch (e) {
-      console.error(e)
-      setNotifState('denied')
+      // Only reaches here for unexpected errors (e.g. SW not supported, browser bug).
+      // Do NOT set notifState to 'denied' — permission wasn't denied.
+      const msg = e instanceof Error ? e.message : String(e)
+      setPushError(`Subscription failed: ${msg}`)
+      console.error('subscribePush error:', e)
+    } finally {
+      setSubscribing(false)
     }
   }
 
@@ -351,6 +388,8 @@ export default function MobilePage() {
       <NotifBanner
         state={notifState}
         subscribed={subscribed}
+        subscribing={subscribing}
+        pushError={pushError}
         onSubscribe={subscribePush}
         onUnsubscribe={unsubscribePush}
       />
@@ -469,10 +508,12 @@ function BtnGhost({ children, onClick }: { children: React.ReactNode; onClick: (
 }
 
 function NotifBanner({
-  state, subscribed, onSubscribe, onUnsubscribe
+  state, subscribed, subscribing, pushError, onSubscribe, onUnsubscribe
 }: {
   state: 'unknown' | 'granted' | 'denied' | 'unsupported'
   subscribed: boolean
+  subscribing: boolean
+  pushError: string
   onSubscribe: () => void
   onUnsubscribe: () => void
 }) {
@@ -480,7 +521,7 @@ function NotifBanner({
     return (
       <div style={{ ...s.banner, ...s.bannerWarn }}>
         <p style={s.bannerText}>
-          Push notifications require adding this page to your Home Screen (iOS) or using Chrome (Android).
+          Push notifications require adding this page to your Home Screen (iOS) or using Chrome/Edge on Android.
         </p>
       </div>
     )
@@ -488,7 +529,9 @@ function NotifBanner({
   if (state === 'denied') {
     return (
       <div style={{ ...s.banner, ...s.bannerWarn }}>
-        <p style={s.bannerText}>Notifications blocked. Enable them in browser settings.</p>
+        <p style={s.bannerText}>
+          Notifications are blocked. Go to browser Settings → Site Settings → Notifications and allow this site.
+        </p>
       </div>
     )
   }
@@ -501,10 +544,19 @@ function NotifBanner({
     )
   }
   return (
-    <div style={{ ...s.banner, ...s.bannerIdle }}>
-      <p style={s.bannerText}>Enable push notifications to receive alerts.</p>
-      <button style={s.bannerBtn} onClick={onSubscribe}>Enable</button>
-    </div>
+    <>
+      <div style={{ ...s.banner, ...s.bannerIdle }}>
+        <p style={s.bannerText}>Enable push notifications to receive alerts.</p>
+        <button style={{ ...s.bannerBtn, opacity: subscribing ? 0.5 : 1 }} onClick={onSubscribe} disabled={subscribing}>
+          {subscribing ? '…' : 'Enable'}
+        </button>
+      </div>
+      {pushError && (
+        <div style={{ ...s.banner, ...s.bannerWarn, marginTop: 8 }}>
+          <p style={{ ...s.bannerText, fontSize: 12 }}>⚠ {pushError}</p>
+        </div>
+      )}
+    </>
   )
 }
 
