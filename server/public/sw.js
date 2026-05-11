@@ -9,14 +9,16 @@ self.addEventListener('push', (event) => {
     if (event.data) data = event.data.json()
   } catch {}
 
+  // type and desktopId are top-level fields in the payload
   const type = data.type ?? 'alert'
+  const desktopId = (data.data && data.data.desktopId) || ''
 
   if (type === 'clear') {
     // Silent push — no notification shown, just message open pages to clear their list.
     event.waitUntil(
       self.clients
         .matchAll({ type: 'window', includeUncontrolled: true })
-        .then((clients) => clients.forEach((c) => c.postMessage({ type: 'clear', desktopId: data.desktopId })))
+        .then((clients) => clients.forEach((c) => c.postMessage({ type: 'clear', desktopId })))
     )
     return
   }
@@ -45,7 +47,7 @@ self.addEventListener('push', (event) => {
               type: 'alert',
               notification: {
                 id: (data.data && data.data.bountyBoxId) || crypto.randomUUID(),
-                desktopId: (data.data && data.data.desktopId) || '',
+                desktopId,
                 title,
                 body,
                 receivedAt: Date.now()

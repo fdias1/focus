@@ -46,7 +46,7 @@ export async function POST(req: Request) {
 
     await sendWebPush(
       webSubs.map((s) => s.subscription),
-      { title: '', body: '', data: { type: 'clear', desktopId } }
+      { type: 'clear', title: '', body: '', data: { desktopId } }
     )
   }
 

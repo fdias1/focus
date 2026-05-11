@@ -68,9 +68,10 @@ export async function POST(req: Request) {
 
     for (const sub of webSubs) {
       await sendWebPush([sub.subscription], {
+        type: 'alert',
         title: notifTitle,
         body: notifBody(clientNickname[sub.clientId] ?? null),
-        data: { type: 'alert', bountyBoxId, desktopId }
+        data: { bountyBoxId, desktopId }
       })
       webPushSent++
     }

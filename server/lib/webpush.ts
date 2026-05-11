@@ -1,6 +1,7 @@
 import webpush from 'web-push'
 
 export interface WebPushPayload {
+  type: 'alert' | 'clear'
   title: string
   body: string
   data?: Record<string, unknown>
