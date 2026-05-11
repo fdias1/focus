@@ -106,6 +106,8 @@ export default function MobilePage() {
       ? (navigator as Navigator & { serviceWorker: ServiceWorkerContainer }).serviceWorker
       : null
 
+    let cleanup: (() => void) | undefined
+
     if (swContainer) {
       swContainer.register('/sw.js').catch(console.error)
 
@@ -127,7 +129,7 @@ export default function MobilePage() {
         }
       }
       swContainer.addEventListener('message', onMessage)
-      return () => swContainer.removeEventListener('message', onMessage)
+      cleanup = () => swContainer.removeEventListener('message', onMessage)
     }
 
     // Check push support
@@ -147,11 +149,13 @@ export default function MobilePage() {
       .finally(() => setLoading(false))
 
     // Check if already subscribed
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    if (swContainer && 'PushManager' in window) {
       navigator.serviceWorker.ready.then((reg) =>
         reg.pushManager.getSubscription().then((sub) => setSubscribed(!!sub))
       )
     }
+
+    return cleanup
   }, [])
 
   const fetchPairings = useCallback(async (id?: string) => {
