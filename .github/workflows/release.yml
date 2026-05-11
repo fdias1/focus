@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Needed so the workflow can create/edit GitHub Releases and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon
+          - os: macos-15
+            build_args: --mac --arm64
+          # Intel Mac
+          - os: macos-13
+            build_args: --mac --x64
+          # Windows
+          - os: windows-latest
+            build_args: --win --x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Distributes as unsigned DMG — users must right-click → Open on first launch.
+          # To enable notarization, add CSC_LINK, CSC_KEY_PASSWORD and
+          # APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID secrets.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-vite build && npx electron-builder ${{ matrix.build_args }} --publish always
