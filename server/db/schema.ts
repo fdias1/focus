@@ -35,6 +35,21 @@ export const pairingTokens = pgTable('pairing_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull()
 })
 
+// Notification log — one row per desktop trigger event (24 h window).
+// Used to replay missed notifications when a new push subscription is created.
+export const desktopNotifications = pgTable(
+  'desktop_notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    desktopId: uuid('desktop_id')
+      .notNull()
+      .references(() => desktopDevices.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).defaultNow().notNull()
+  },
+  (t) => [index('notif_desktop_sent_idx').on(t.desktopId, t.sentAt)]
+)
+
 // Web Push subscriptions — one per browser/device, owned by a client.
 export const webPushSubscriptions = pgTable(
   'web_push_subscriptions',
