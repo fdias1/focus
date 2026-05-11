@@ -25,6 +25,9 @@ declare global {
       startAreaSelection: () => Promise<Region | null>
       getDesktopId: () => Promise<string | null>
       pairDevice: () => Promise<PairResult>
+      getScreenPermission: () => Promise<'granted' | 'denied' | 'not-determined'>
+      openScreenSettings: () => Promise<void>
+      onScreenPermissionDenied: (cb: () => void) => () => void
       onStateChanged: (cb: (state: AppState) => void) => () => void
     }
   }
@@ -45,12 +48,19 @@ export default function App() {
   const [desktopId, setDesktopId] = useState<string | null>(null)
   const [pairError, setPairError] = useState('')
   const [pairing, setPairing] = useState(false)
+  const [screenPermission, setScreenPermission] = useState<'granted' | 'denied' | 'not-determined' | null>(null)
 
   useEffect(() => {
     window.focusApp.getState().then(setState)
     window.focusApp.getConfig().then(setConfig)
     window.focusApp.getDesktopId().then(setDesktopId)
-    return window.focusApp.onStateChanged(setState)
+    window.focusApp.getScreenPermission().then(setScreenPermission)
+    const unsubState = window.focusApp.onStateChanged(setState)
+    const unsubPerm = window.focusApp.onScreenPermissionDenied(() => setScreenPermission('denied'))
+    return () => {
+      unsubState()
+      unsubPerm()
+    }
   }, [])
 
   function updateConfig(partial: Partial<AppConfig>) {
@@ -96,6 +106,24 @@ export default function App() {
       <button style={styles.toggle} onClick={() => window.focusApp.toggle()}>
         {state === 'off' ? 'Turn On' : 'Turn Off'}
       </button>
+
+      {screenPermission && screenPermission !== 'granted' && (
+        <div style={styles.permissionBanner}>
+          <span style={styles.permissionText}>
+            {screenPermission === 'denied'
+              ? '⚠ Screen Recording denied — go to System Settings → Privacy → Screen Recording and enable Focus.'
+              : '⚠ Screen Recording permission required to detect changes.'}
+          </span>
+          <button
+            style={styles.permissionBtn}
+            onClick={() => window.focusApp.openScreenSettings().then(() =>
+              window.focusApp.getScreenPermission().then(setScreenPermission)
+            )}
+          >
+            {screenPermission === 'denied' ? 'Open Settings' : 'Allow'}
+          </button>
+        </div>
+      )}
 
       <div style={styles.settings}>
         <Setting
@@ -391,5 +419,32 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     fontFamily: 'monospace',
     letterSpacing: '0.08em'
+  },
+  permissionBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    backgroundColor: '#fef3c7',
+    border: '1px solid #f59e0b',
+    borderRadius: '8px',
+    padding: '10px 12px',
+    marginBottom: '16px'
+  },
+  permissionText: {
+    flex: 1,
+    fontSize: '12px',
+    color: '#92400e',
+    lineHeight: '1.4'
+  },
+  permissionBtn: {
+    flexShrink: 0,
+    fontSize: '12px',
+    fontWeight: 600,
+    padding: '4px 10px',
+    borderRadius: '6px',
+    border: '1px solid #d97706',
+    background: '#f59e0b',
+    color: '#fff',
+    cursor: 'pointer'
   }
 }

@@ -25,7 +25,10 @@ export const IPC = {
   SET_CONFIG: 'focus:set-config',
   START_AREA_SELECTION: 'focus:start-area-selection',
   PAIR_DEVICE: 'focus:pair-device',
-  GET_DESKTOP_ID: 'focus:get-desktop-id'
+  GET_DESKTOP_ID: 'focus:get-desktop-id',
+  GET_SCREEN_PERMISSION: 'focus:get-screen-permission',
+  OPEN_SCREEN_SETTINGS: 'focus:open-screen-settings',
+  SCREEN_PERMISSION_DENIED: 'focus:screen-permission-denied'
 } as const
 
 export interface PairResult {

@@ -6,6 +6,7 @@ import { TrayManager } from './modules/TrayManager'
 import { selectArea } from './modules/AreaSelector'
 import { ensureDesktopRegistered } from './modules/DesktopRegistrar'
 import { openQRWindow } from './modules/QRWindow'
+import { requestScreenPermission, getScreenPermissionStatus } from './modules/ScreenScanner'
 import { IPC, AppConfig } from '../shared/ipc-types'
 
 // Start as a background/accessory app — no dock icon, no cmd+tab entry.
@@ -79,10 +80,15 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle(IPC.GET_DESKTOP_ID, () => config.getServerCredentials().desktopId)
   ipcMain.handle(IPC.PAIR_DEVICE, async () => openQRWindow(config))
+  ipcMain.handle(IPC.GET_SCREEN_PERMISSION, () => getScreenPermissionStatus())
+  ipcMain.handle(IPC.OPEN_SCREEN_SETTINGS, () => requestScreenPermission())
 
   state.on('stateChanged', (newState) => {
     tray.update(newState)
     configWindow?.webContents.send(IPC.STATE_CHANGED, newState)
+  })
+  state.on('screenPermissionDenied', () => {
+    configWindow?.webContents.send(IPC.SCREEN_PERMISSION_DENIED)
   })
 
   app.on('window-all-closed', () => { /* keep running as tray app */ })

@@ -3,11 +3,13 @@ import { AppState } from '../../shared/ipc-types'
 import { ConfigStore } from './ConfigStore'
 import { WakeLockManager } from './WakeLockManager'
 import { InactivityDetector } from './InactivityDetector'
-import { ScreenScanner, Frame } from './ScreenScanner'
+import { ScreenScanner, Frame, getScreenPermissionStatus } from './ScreenScanner'
 import { hasSignificantChange, getTrayExclusionRegion } from './ChangeDetector'
 import { AlarmManager } from './AlarmManager'
 import { OverlayManager } from './OverlayManager'
 import { RemoteNotifier } from './RemoteNotifier'
+
+export { getScreenPermissionStatus }
 
 export class StateManager extends EventEmitter {
   private _current: AppState = 'off'
@@ -26,6 +28,7 @@ export class StateManager extends EventEmitter {
     this.inactivity.on('inactive', () => this.onInactive())
     this.inactivity.on('active', () => this.onActive())
     this.scanner.on('frame', (frame: Frame) => this.onFrame(frame))
+    this.scanner.on('permissionDenied', () => this.emit('screenPermissionDenied'))
   }
 
   get current(): AppState {
