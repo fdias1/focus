@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, AppConfig, AppState, Region } from '../shared/ipc-types'
+import { IPC, AppConfig, AppState, PairResult, Region } from '../shared/ipc-types'
 
 contextBridge.exposeInMainWorld('focusApp', {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC.GET_STATE),
@@ -9,7 +9,9 @@ contextBridge.exposeInMainWorld('focusApp', {
     ipcRenderer.invoke(IPC.SET_CONFIG, config),
   startAreaSelection: (): Promise<Region | null> =>
     ipcRenderer.invoke(IPC.START_AREA_SELECTION),
-  pairDevice: (): Promise<void> =>
+  getDesktopId: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.GET_DESKTOP_ID),
+  pairDevice: (): Promise<PairResult> =>
     ipcRenderer.invoke(IPC.PAIR_DEVICE),
   onStateChanged: (cb: (state: AppState) => void) => {
     ipcRenderer.on(IPC.STATE_CHANGED, (_event, state) => cb(state))

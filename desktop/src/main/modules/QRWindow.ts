@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import QRCode from 'qrcode'
+import { PairResult } from '../../shared/ipc-types'
 import { ConfigStore } from './ConfigStore'
 import { ensureDesktopRegistered } from './DesktopRegistrar'
 import { SERVER_URL } from './constants'
@@ -39,30 +40,39 @@ async function waitForPairing(
         if (pairings.length > previousCount) return true
       }
     } catch {
-      // ignore
+      // ignore network hiccups — keep polling
     }
   }
   return false
 }
 
-export async function openQRWindow(config: ConfigStore): Promise<void> {
+export async function openQRWindow(config: ConfigStore): Promise<PairResult> {
   // Only one QR window at a time.
   if (qrWindow && !qrWindow.isDestroyed()) {
     qrWindow.focus()
-    return
+    return { ok: true }
   }
 
-  // Credentials may not be ready if startup registration hasn't finished yet.
-  // Try once more synchronously before giving up.
+  // If startup registration hasn't finished yet, try again now.
   if (!config.getServerCredentials().desktopId) {
     await ensureDesktopRegistered(config)
   }
 
   const { desktopId, apiKey } = config.getServerCredentials()
-  if (!desktopId || !apiKey) return
+  if (!desktopId || !apiKey) {
+    return {
+      ok: false,
+      error: 'Could not connect to the Focus server. Check your internet connection and try again.'
+    }
+  }
 
   const token = await createPairingToken(desktopId, apiKey)
-  if (!token) return
+  if (!token) {
+    return {
+      ok: false,
+      error: `Could not create a pairing token. The server may be unreachable (${SERVER_URL}).`
+    }
+  }
 
   // QR payload: versioned so the mobile app can parse it.
   const qrPayload = JSON.stringify({ v: 1, token, server: SERVER_URL })
@@ -94,7 +104,7 @@ export async function openQRWindow(config: ConfigStore): Promise<void> {
 <body>
   <div class="qr">${qrSvg}</div>
   <div class="token">${token}</div>
-  <div class="hint">Scan with Focus Client<br>or enter the code manually.<br>Expires in 5 minutes.</div>
+  <div class="hint">Scan with Focus on your phone<br>or enter the code manually.<br>Expires in 5 minutes.</div>
 </body>
 </html>`)
 
@@ -135,4 +145,6 @@ export async function openQRWindow(config: ConfigStore): Promise<void> {
     clearTimeout(timeout)
     if (paired && qrWindow && !qrWindow.isDestroyed()) qrWindow.close()
   })
+
+  return { ok: true }
 }

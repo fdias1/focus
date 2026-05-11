@@ -24,5 +24,11 @@ export const IPC = {
   GET_CONFIG: 'focus:get-config',
   SET_CONFIG: 'focus:set-config',
   START_AREA_SELECTION: 'focus:start-area-selection',
-  PAIR_DEVICE: 'focus:pair-device'
+  PAIR_DEVICE: 'focus:pair-device',
+  GET_DESKTOP_ID: 'focus:get-desktop-id'
 } as const
+
+export interface PairResult {
+  ok: boolean
+  error?: string
+}

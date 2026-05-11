@@ -23,7 +23,7 @@ function createConfigWindow(): void {
 
   configWindow = new BrowserWindow({
     width: 400,
-    height: 610,
+    height: 650,
     resizable: false,
     title: 'Focus — Settings',
     webPreferences: {
@@ -77,9 +77,8 @@ app.whenReady().then(async () => {
     config.set({ watchArea: region })
     return region
   })
-  ipcMain.handle(IPC.PAIR_DEVICE, async () => {
-    await openQRWindow(config)
-  })
+  ipcMain.handle(IPC.GET_DESKTOP_ID, () => config.getServerCredentials().desktopId)
+  ipcMain.handle(IPC.PAIR_DEVICE, async () => openQRWindow(config))
 
   state.on('stateChanged', (newState) => {
     tray.update(newState)

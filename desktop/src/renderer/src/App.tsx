@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AppConfig, AppState, Region } from '../../shared/ipc-types'
+import { AppConfig, AppState, PairResult, Region } from '../../shared/ipc-types'
 
 const STATE_LABEL: Record<AppState, string> = {
   off: 'Off',
@@ -23,7 +23,8 @@ declare global {
       getConfig: () => Promise<AppConfig>
       setConfig: (partial: Partial<AppConfig>) => Promise<void>
       startAreaSelection: () => Promise<Region | null>
-      pairDevice: () => Promise<void>
+      getDesktopId: () => Promise<string | null>
+      pairDevice: () => Promise<PairResult>
       onStateChanged: (cb: (state: AppState) => void) => () => void
     }
   }
@@ -41,10 +42,14 @@ export default function App() {
     remoteNotifications: false
   })
   const [selecting, setSelecting] = useState(false)
+  const [desktopId, setDesktopId] = useState<string | null>(null)
+  const [pairError, setPairError] = useState('')
+  const [pairing, setPairing] = useState(false)
 
   useEffect(() => {
     window.focusApp.getState().then(setState)
     window.focusApp.getConfig().then(setConfig)
+    window.focusApp.getDesktopId().then(setDesktopId)
     return window.focusApp.onStateChanged(setState)
   }, [])
 
@@ -141,14 +146,27 @@ export default function App() {
           <Toggle
             label="Remote (push to mobile)"
             checked={config.remoteNotifications}
-            onChange={(v) => updateConfig({ remoteNotifications: v })}
+            onChange={(v) => { updateConfig({ remoteNotifications: v }); setPairError('') }}
           />
           {config.remoteNotifications && (
-            <button style={styles.editBtn} onClick={() => window.focusApp.pairDevice()}>
-              Pair Device
+            <button
+              style={{ ...styles.editBtn, opacity: pairing ? 0.5 : 1 }}
+              disabled={pairing}
+              onClick={async () => {
+                setPairError('')
+                setPairing(true)
+                const result = await window.focusApp.pairDevice()
+                setPairing(false)
+                if (!result.ok && result.error) setPairError(result.error)
+              }}
+            >
+              {pairing ? 'Connecting…' : 'Pair Device'}
             </button>
           )}
         </div>
+        {pairError && (
+          <p style={styles.errorMsg}>{pairError}</p>
+        )}
 
         {/* Watch area */}
         <div style={styles.sectionHeader}>Monitoring</div>
@@ -180,6 +198,10 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {desktopId && (
+        <p style={styles.deviceId}>Device ID: {desktopId.slice(0, 8).toUpperCase()}</p>
+      )}
     </div>
   )
 }
@@ -355,5 +377,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     color: '#9ca3af',
     paddingLeft: '21px'
+  },
+  errorMsg: {
+    fontSize: '12px',
+    color: '#dc2626',
+    margin: '-8px 0 0',
+    lineHeight: '1.4'
+  },
+  deviceId: {
+    marginTop: '20px',
+    fontSize: '11px',
+    color: '#d1d5db',
+    textAlign: 'center',
+    fontFamily: 'monospace',
+    letterSpacing: '0.08em'
   }
 }
