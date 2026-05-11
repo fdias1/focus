@@ -38,7 +38,10 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # npm install (not ci) so npm resolves platform-specific native binaries
+        # (e.g. app-builder-bin) for the current runner architecture instead of
+        # using the lockfile entry that was generated on a different platform.
+        run: npm install
 
       - name: Build & publish
         working-directory: desktop
