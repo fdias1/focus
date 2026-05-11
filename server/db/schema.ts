@@ -8,7 +8,6 @@ export const desktopDevices = pgTable('desktop_devices', {
 
 export const clientDevices = pgTable('client_devices', {
   id: uuid('id').primaryKey(),
-  pushToken: text('push_token'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
 })
 

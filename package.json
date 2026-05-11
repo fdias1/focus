@@ -3,8 +3,7 @@
   "private": true,
   "workspaces": [
     "desktop",
-    "server",
-    "client"
+    "server"
   ],
   "devDependencies": {
     "drizzle-orm": "^0.45.2"

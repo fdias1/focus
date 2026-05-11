@@ -7,7 +7,6 @@ import { z } from 'zod'
 const Body = z.object({
   token: z.string().min(1),
   clientId: z.string().uuid(),
-  pushToken: z.string().optional(),
   nickname: z.string().max(64).optional()
 })
 
@@ -15,7 +14,7 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json())
   if (!parsed.success) return err('token and clientId are required')
 
-  const { token, clientId, pushToken, nickname } = parsed.data
+  const { token, clientId, nickname } = parsed.data
 
   // Validate token and check expiry
   const [pt] = await db
@@ -26,14 +25,11 @@ export async function POST(req: Request) {
 
   if (!pt) return err('invalid or expired token', 404)
 
-  // Ensure client is registered; upsert so the client can also set push token here
+  // Ensure client is registered
   await db
     .insert(clientDevices)
-    .values({ id: clientId, pushToken: pushToken ?? null })
-    .onConflictDoUpdate({
-      target: clientDevices.id,
-      set: { pushToken: pushToken ?? null }
-    })
+    .values({ id: clientId })
+    .onConflictDoNothing()
 
   // Create pairing (ignore if already paired)
   const [pairing] = await db

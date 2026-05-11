@@ -1,7 +1,6 @@
 import { db } from '@/db'
 import { notifications, pairings, clientDevices, webPushSubscriptions } from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
-import { sendPush } from '@/lib/push'
 import { sendWebPush } from '@/lib/webpush'
 import { eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
@@ -32,7 +31,6 @@ export async function POST(req: Request) {
   // Find all paired clients
   const paired = await db
     .select({
-      pushToken: clientDevices.pushToken,
       clientId: clientDevices.id,
       pairingNickname: pairings.nickname
     })
@@ -44,27 +42,15 @@ export async function POST(req: Request) {
   const notifBody = (nickname: string | null) =>
     nickname ? `On "${nickname}"` : 'A change was detected on your screen.'
 
-  // Expo push (React Native clients)
-  const expoMessages = paired
-    .filter((p) => p.pushToken)
-    .map((p) => ({
-      to: p.pushToken!,
-      title: notifTitle,
-      body: notifBody(p.pairingNickname),
-      data: { type: 'alert', bountyBoxId, desktopId }
-    }))
-  await sendPush(expoMessages)
-
-  // Web push (PWA clients)
   const clientIds = paired.map((p) => p.clientId)
   let webPushSent = 0
+
   if (clientIds.length > 0) {
     const webSubs = await db
       .select({ id: webPushSubscriptions.id, subscription: webPushSubscriptions.subscription, clientId: webPushSubscriptions.clientId })
       .from(webPushSubscriptions)
       .where(inArray(webPushSubscriptions.clientId, clientIds))
 
-    // Group by clientId to pick up the right nickname per subscription
     const clientNickname = Object.fromEntries(paired.map((p) => [p.clientId, p.pairingNickname]))
 
     for (const sub of webSubs) {
@@ -81,5 +67,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return json({ ok: true, expo: expoMessages.length, web: webPushSent })
+  return json({ ok: true, web: webPushSent })
 }
