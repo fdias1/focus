@@ -42,11 +42,16 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        # npm install (not ci) so npm resolves platform-specific native binaries
-        # (e.g. app-builder-bin) for the current runner architecture instead of
-        # using the lockfile entry that was generated on a different platform.
+      - name: Install root dependencies
         run: npm install
+
+      # electron-builder depends on app-builder-bin, whose pre-compiled binary is
+      # platform-specific. Installing electron-builder locally inside desktop/ ensures
+      # Node's module resolution finds the correct platform binary from desktop/node_modules
+      # instead of the workspace-hoisted copy in the root (which may have the wrong arch).
+      - name: Install electron-builder locally in desktop
+        run: npm install --save-dev electron-builder
+        working-directory: desktop
 
       - name: Build & publish
         working-directory: desktop
