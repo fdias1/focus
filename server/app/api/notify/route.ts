@@ -1,8 +1,8 @@
 import { db } from '@/db'
-import { pairings, clientDevices, webPushSubscriptions, desktopNotifications } from '@/db/schema'
+import { pairings, clientDevices, webPushSubscriptions } from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
 import { sendWebPush } from '@/lib/webpush'
-import { eq, inArray, lt, sql } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 const Body = z.object({
@@ -37,18 +37,6 @@ export async function POST(req: Request) {
   const clientIds = paired.map((p) => p.clientId)
   if (clientIds.length === 0) return json({ ok: true, web: 0 })
 
-  // Log the notification before sending so its stable ID can be included in the
-  // push payload and missed notifications can be replayed on resubscribe.
-  // Also prune records older than 24 h for this desktop to keep the table lean.
-  const [notifRecord] = await db
-    .insert(desktopNotifications)
-    .values({ desktopId, title: notifTitle })
-    .returning({ id: desktopNotifications.id })
-
-  db.delete(desktopNotifications)
-    .where(lt(desktopNotifications.sentAt, sql`now() - interval '24 hours'`))
-    .catch(() => {})
-
   const webSubs = await db
     .select({
       id: webPushSubscriptions.id,
@@ -74,7 +62,7 @@ export async function POST(req: Request) {
     Array.from(byBody.entries()).map(async ([body, subs]) => {
       const result = await sendWebPush(
         subs.map((s) => ({ id: s.id, subscription: s.subscription })),
-        { type: 'alert', title: notifTitle, body, data: { desktopId, notificationId: notifRecord.id } }
+        { type: 'alert', title: notifTitle, body, data: { desktopId } }
       )
       expired = expired.concat(result)
     })

@@ -32,7 +32,6 @@ interface StoredNotification {
 
 const NOTIF_KEY = 'focus_notifications'
 const NOTIF_MAX = 100
-const LAST_SUB_KEY = 'focus_last_sub_at'
 
 function loadNotifications(): StoredNotification[] {
   try {
@@ -44,34 +43,6 @@ function loadNotifications(): StoredNotification[] {
 
 function saveNotifications(list: StoredNotification[]): void {
   localStorage.setItem(NOTIF_KEY, JSON.stringify(list.slice(0, NOTIF_MAX)))
-}
-
-interface MissedNotif {
-  id: string
-  title: string
-  body: string
-  desktopId: string
-  sentAt: string
-}
-
-function mergeMissed(prev: StoredNotification[], missed: MissedNotif[]): StoredNotification[] {
-  if (!missed.length) return prev
-  const seen = new Set(prev.map((n) => n.id))
-  const novel = missed
-    .filter((n) => !seen.has(n.id))
-    .map((n) => ({ id: n.id, desktopId: n.desktopId, title: n.title, body: n.body, receivedAt: new Date(n.sentAt).getTime() }))
-  if (!novel.length) return prev
-  const next = [...novel, ...prev].slice(0, NOTIF_MAX)
-  saveNotifications(next)
-  return next
-}
-
-function getLastSubAt(): string {
-  return localStorage.getItem(LAST_SUB_KEY) ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-}
-
-function setLastSubAt(ts: string): void {
-  localStorage.setItem(LAST_SUB_KEY, ts)
 }
 
 // ---------------------------------------------------------------------------
@@ -92,23 +63,6 @@ function urlBase64ToUint8Array(b64: string): Uint8Array {
   const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/')
   const raw = atob(base64)
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
-}
-
-// Persist clientId and lastSubAt in IndexedDB so the Service Worker can read
-// them from pushsubscriptionchange (SW has no access to localStorage).
-function syncPushMetaToIdb(clientId: string, lastSubAt: string): void {
-  try {
-    const req = indexedDB.open('focus-push', 1)
-    req.onupgradeneeded = () => req.result.createObjectStore('meta')
-    req.onsuccess = () => {
-      const tx = req.result.transaction('meta', 'readwrite')
-      const store = tx.objectStore('meta')
-      store.put(clientId, 'clientId')
-      store.put(lastSubAt, 'lastSubAt')
-    }
-  } catch {
-    // Non-critical — pushsubscriptionchange will simply no-op if missing.
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -144,9 +98,6 @@ export default function MobilePage() {
   useEffect(() => {
     const id = getClientId()
     setClientId(id)
-    // Keep IDB in sync so the SW can resubscribe and replay missed notifications
-    // via pushsubscriptionchange even when the app is closed.
-    syncPushMetaToIdb(id, getLastSubAt())
 
     // Load persisted notifications
     setNotifications(loadNotifications())
@@ -200,55 +151,16 @@ export default function MobilePage() {
 
     // Check if already subscribed and re-sync with server on every load.
     // This handles browser-side key rotation and re-installation on home screen.
-    // If the subscription was lost but permission is still granted, resubscribe
-    // silently so the user never has to tap "Enable" again.
     if (swContainer && 'PushManager' in window) {
       navigator.serviceWorker.ready.then(async (reg) => {
         const sub = await reg.pushManager.getSubscription()
+        setSubscribed(!!sub)
         if (sub) {
-          setSubscribed(true)
-          // Re-sync subscription and recover any missed notifications.
-          const since = getLastSubAt()
-          const res = await fetch('/api/web-push/subscribe', {
+          fetch('/api/web-push/subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientId: id, subscription: sub.toJSON(), since })
-          }).catch(() => null)
-          if (res?.ok) {
-            const { missed } = await res.json() as { missed?: MissedNotif[] }
-            setLastSubAt(new Date().toISOString())
-            setNotifications((prev) => mergeMissed(prev, missed ?? []))
-          }
-        } else if (Notification.permission === 'granted') {
-          // Subscription was lost (browser expiry, push-service 410, SW reinstall).
-          // Permission is still granted, so re-create the subscription without prompting.
-          try {
-            const keyRes = await fetch('/api/web-push/vapid-key')
-            if (!keyRes.ok) return
-            const { publicKey } = await keyRes.json() as { publicKey?: string }
-            if (!publicKey) return
-            const newSub = await reg.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as ArrayBuffer
-            })
-            const since = getLastSubAt()
-            const res = await fetch('/api/web-push/subscribe', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ clientId: id, subscription: newSub.toJSON(), since })
-            })
-            if (res.ok) {
-              const { missed } = await res.json() as { missed?: MissedNotif[] }
-              setLastSubAt(new Date().toISOString())
-              setNotifications((prev) => mergeMissed(prev, missed ?? []))
-            }
-            setSubscribed(true)
-          } catch {
-            // Silent failure — banner will still show "Enable" for manual recovery.
-            setSubscribed(false)
-          }
-        } else {
-          setSubscribed(false)
+            body: JSON.stringify({ clientId: id, subscription: sub.toJSON() })
+          }).catch(() => {})
         }
       })
     }
@@ -306,21 +218,17 @@ export default function MobilePage() {
         applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as ArrayBuffer
       })
 
-      // Step 4: save subscription on server and recover any missed notifications.
-      const since = getLastSubAt()
+      // Step 4: save subscription on server.
       const saveRes = await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, subscription: sub.toJSON(), since })
+        body: JSON.stringify({ clientId, subscription: sub.toJSON() })
       })
       if (!saveRes.ok) {
         setPushError('Subscribed locally but failed to save to server. Try again.')
         return
       }
 
-      const { missed } = await saveRes.json() as { missed?: MissedNotif[] }
-      setLastSubAt(new Date().toISOString())
-      setNotifications((prev) => mergeMissed(prev, missed ?? []))
       setSubscribed(true)
     } catch (e) {
       // Only reaches here for unexpected errors (e.g. SW not supported, browser bug).
