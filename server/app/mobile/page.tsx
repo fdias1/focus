@@ -519,7 +519,9 @@ export default function MobilePage() {
 
       {status && <p style={s.statusMsg}>{status}</p>}
 
-      <p style={s.clientId}>ID: {clientId.slice(0, 8)}</p>
+      <p style={s.clientId}>
+        ID: {clientId.slice(0, 8)} · v{process.env.NEXT_PUBLIC_APP_VERSION} ({process.env.NEXT_PUBLIC_GIT_SHA})
+      </p>
     </Page>
   )
 }
