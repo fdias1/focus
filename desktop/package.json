@@ -49,7 +49,7 @@
     "publish": {
       "provider": "github",
       "owner": "fdias1",
-      "repo": "focus"
+      "repo": "focus-releases"
     },
     "mac": {
       "category": "public.app-category.productivity",

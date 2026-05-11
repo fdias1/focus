@@ -69,7 +69,12 @@ jobs:
         working-directory: desktop
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_TOKEN must be a PAT with repo scope on fdias1/focus-releases
+          # (GITHUB_TOKEN only has access to the current repo).
+          # Create at: Settings → Developer settings → Personal access tokens → Fine-grained
+          # Grant: Contents = Read and write on the focus-releases repo.
+          # Then add it as a repository secret named RELEASES_TOKEN.
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           # Distributes unsigned. Users right-click → Open on first macOS launch.
           # To sign/notarize: add CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID,
           # APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID secrets and drop this line.
