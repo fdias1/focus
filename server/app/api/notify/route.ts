@@ -1,8 +1,14 @@
 import { db } from '@/db'
-import { pairings, clientDevices, webPushSubscriptions } from '@/db/schema'
+import {
+  pairings,
+  clientDevices,
+  webPushSubscriptions,
+  telegramPairings
+} from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
 import { sendWebPush } from '@/lib/webpush'
-import { eq, inArray } from 'drizzle-orm'
+import { escapeMarkdownV2, sendTelegramMessage } from '@/lib/telegram'
+import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 const Body = z.object({
@@ -26,6 +32,11 @@ export async function POST(req: Request) {
     .innerJoin(clientDevices, eq(pairings.clientId, clientDevices.id))
     .where(eq(pairings.desktopId, desktopId))
 
+  const tgPaired = await db
+    .select({ chatId: telegramPairings.chatId, nickname: telegramPairings.nickname })
+    .from(telegramPairings)
+    .where(eq(telegramPairings.desktopId, desktopId))
+
   // Use the pairing's nickname when set; otherwise fall back to a short
   // desktop identifier so the user can still tell which desktop fired the
   // alarm. Same convention used in the PWA pairing list.
@@ -35,16 +46,21 @@ export async function POST(req: Request) {
     `On ${nickname ? `"${nickname}"` : desktopLabel}`
 
   const clientIds = paired.map((p) => p.clientId)
-  if (clientIds.length === 0) return json({ ok: true, web: 0 })
+  if (clientIds.length === 0 && tgPaired.length === 0) {
+    return json({ ok: true, web: 0, telegram: 0 })
+  }
 
-  const webSubs = await db
-    .select({
-      id: webPushSubscriptions.id,
-      subscription: webPushSubscriptions.subscription,
-      clientId: webPushSubscriptions.clientId
-    })
-    .from(webPushSubscriptions)
-    .where(inArray(webPushSubscriptions.clientId, clientIds))
+  const webSubs =
+    clientIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: webPushSubscriptions.id,
+            subscription: webPushSubscriptions.subscription,
+            clientId: webPushSubscriptions.clientId
+          })
+          .from(webPushSubscriptions)
+          .where(inArray(webPushSubscriptions.clientId, clientIds))
 
   const clientNickname = Object.fromEntries(paired.map((p) => [p.clientId, p.pairingNickname]))
 
@@ -58,7 +74,7 @@ export async function POST(req: Request) {
   }
 
   let expired: string[] = []
-  await Promise.all(
+  const webDispatch = Promise.all(
     Array.from(byBody.entries()).map(async ([body, subs]) => {
       const result = await sendWebPush(
         subs.map((s) => ({ id: s.id, subscription: s.subscription })),
@@ -68,9 +84,38 @@ export async function POST(req: Request) {
     })
   )
 
+  // Dispatch in parallel to Telegram. Drop pairings that the user has
+  // explicitly killed (403 bot blocked) or whose chat is gone (400 chat not
+  // found) — analogous to web-push 410/404 cleanup.
+  const tgDispatch = Promise.all(
+    tgPaired.map(async (p) => {
+      const label = p.nickname ? `"${p.nickname}"` : desktopLabel
+      const text = `🔔 *Focus* \\— change detected on ${escapeMarkdownV2(label)}`
+      const res = await sendTelegramMessage(p.chatId, text)
+      if (
+        res.statusCode === 403 ||
+        (res.statusCode === 400 && /chat not found/i.test(res.description ?? ''))
+      ) {
+        await db
+          .delete(telegramPairings)
+          .where(
+            and(
+              eq(telegramPairings.chatId, p.chatId),
+              eq(telegramPairings.desktopId, desktopId)
+            )
+          )
+        return false
+      }
+      return res.ok
+    })
+  )
+
+  const [, tgResults] = await Promise.all([webDispatch, tgDispatch])
+
   if (expired.length > 0) {
     await db.delete(webPushSubscriptions).where(inArray(webPushSubscriptions.id, expired))
   }
 
-  return json({ ok: true, web: webSubs.length - expired.length })
+  const tgSent = tgResults.filter(Boolean).length
+  return json({ ok: true, web: webSubs.length - expired.length, telegram: tgSent })
 }

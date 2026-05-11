@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "setup:telegram": "node --env-file=.env.local scripts/setup-telegram-webhook.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

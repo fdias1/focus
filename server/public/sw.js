@@ -32,7 +32,8 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     Promise.all([
-      // Show OS notification
+      // Advance the missed-notification watermark so a later resync doesn't replay this one.
+      idbSet('lastSubAt', new Date().toISOString()),
       self.registration.showNotification(title, {
         body,
         icon: '/icon-192.png',
@@ -41,7 +42,6 @@ self.addEventListener('push', (event) => {
         renotify: true,
         data: data.data ?? {}
       }),
-      // Message open pages so they can store and display the notification
       self.clients
         .matchAll({ type: 'window', includeUncontrolled: true })
         .then((clients) =>
