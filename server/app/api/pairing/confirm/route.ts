@@ -16,35 +16,36 @@ export async function POST(req: Request) {
 
   const { token, clientId, nickname } = parsed.data
 
-  // All-or-nothing: if any step fails the token is preserved for retry.
-  // Neon HTTP supports db.transaction() as a single batched request.
-  const result = await db.transaction(async (tx) => {
-    // Atomic consume — DELETE+RETURNING prevents concurrent double-consume.
-    const [pt] = await tx
-      .delete(pairingTokens)
-      .where(and(eq(pairingTokens.token, token), gt(pairingTokens.expiresAt, new Date())))
-      .returning()
-    if (!pt) return null
+  // Note: we can't wrap the steps below in a transaction because the
+  // @neondatabase/serverless HTTP driver doesn't support them
+  // ("No transactions support in neon-http driver"). The atomicity that
+  // actually matters — no two clients consuming the same token — is
+  // guaranteed by the DELETE...RETURNING below. The downside is that if a
+  // subsequent insert fails, the token is gone and the user must request a
+  // new QR; acceptable given how rare DB errors are here.
 
-    await tx.insert(clientDevices).values({ id: clientId }).onConflictDoNothing()
+  // Atomic consume — DELETE+RETURNING prevents concurrent double-consume.
+  const [pt] = await db
+    .delete(pairingTokens)
+    .where(and(eq(pairingTokens.token, token), gt(pairingTokens.expiresAt, new Date())))
+    .returning()
+  if (!pt) return err('invalid or expired token', 404)
 
-    let [pairing] = await tx
-      .insert(pairings)
-      .values({ desktopId: pt.desktopId, clientId, nickname: nickname ?? null })
-      .onConflictDoNothing()
-      .returning()
+  await db.insert(clientDevices).values({ id: clientId }).onConflictDoNothing()
 
-    if (!pairing) {
-      ;[pairing] = await tx
-        .select()
-        .from(pairings)
-        .where(and(eq(pairings.desktopId, pt.desktopId), eq(pairings.clientId, clientId)))
-        .limit(1)
-    }
+  let [pairing] = await db
+    .insert(pairings)
+    .values({ desktopId: pt.desktopId, clientId, nickname: nickname ?? null })
+    .onConflictDoNothing()
+    .returning()
 
-    return { pairingId: pairing?.id ?? null, desktopId: pt.desktopId }
-  })
+  if (!pairing) {
+    ;[pairing] = await db
+      .select()
+      .from(pairings)
+      .where(and(eq(pairings.desktopId, pt.desktopId), eq(pairings.clientId, clientId)))
+      .limit(1)
+  }
 
-  if (!result) return err('invalid or expired token', 404)
-  return json(result, 201)
+  return json({ pairingId: pairing?.id ?? null, desktopId: pt.desktopId }, 201)
 }

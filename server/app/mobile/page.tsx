@@ -347,7 +347,7 @@ export default function MobilePage() {
         setScreen('home')
         fetchPairings()
       } else {
-        const { error } = await res.json().catch(() => ({ error: 'unknown error' }))
+        const { error } = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
         setStatus(`Error: ${error}`)
         setScreen('home')
       }
