@@ -5,8 +5,7 @@ import { ChunkGrid } from './ChangeDetector'
 // Active chunks (changed pixels) are left transparent; inactive chunks receive a
 // dark 30 % opacity overlay, so only the areas that actually changed remain visible.
 
-function makeOverlayHtml(cols: number, rows: number): string {
-  return encodeURIComponent(`<!DOCTYPE html>
+const OVERLAY_HTML = encodeURIComponent(`<!DOCTYPE html>
 <html>
 <head>
 <style>
@@ -18,22 +17,21 @@ function makeOverlayHtml(cols: number, rows: number): string {
 <body>
 <canvas id="c"></canvas>
 <script>
-  var COLS = ${cols}, ROWS = ${rows};
   var c = document.getElementById('c');
   var ctx = c.getContext('2d');
 
-  // Called from main process via executeJavaScript with a plain Array of 0/1 values.
-  window.drawGrid = function(active) {
+  // cols/rows are passed each call because chunk count depends on physical resolution.
+  window.drawGrid = function(cols, rows, active) {
     c.width  = window.innerWidth;
     c.height = window.innerHeight;
-    var cw = c.width  / COLS;
-    var ch = c.height / ROWS;
+    var cw = c.width  / cols;
+    var ch = c.height / rows;
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     for (var i = 0; i < active.length; i++) {
       if (!active[i]) {
-        var col = i % COLS;
-        var row = Math.floor(i / COLS);
+        var col = i % cols;
+        var row = Math.floor(i / cols);
         ctx.fillRect(
           Math.floor(col * cw), Math.floor(row * ch),
           Math.ceil(cw),        Math.ceil(ch)
@@ -44,7 +42,6 @@ function makeOverlayHtml(cols: number, rows: number): string {
 </script>
 </body>
 </html>`)
-}
 
 function createOverlayWindow(display: Display): BrowserWindow {
   const { x, y, width, height } = display.bounds
@@ -69,6 +66,8 @@ function createOverlayWindow(display: Display): BrowserWindow {
 
 interface Entry {
   win: BrowserWindow
+  cols: number
+  rows: number
   // Cumulative OR of all grids received since alarm started.
   active: Uint8Array
   // True once the window has finished loading and drawGrid is callable.
@@ -88,11 +87,10 @@ export class OverlayManager {
     if (!entry) {
       const win = createOverlayWindow(display)
       const active = new Uint8Array(grid.cols * grid.rows)
-      entry = { win, active, ready: false, pendingDraw: false }
+      entry = { win, cols: grid.cols, rows: grid.rows, active, ready: false, pendingDraw: false }
       this.entries.set(display.id, entry)
 
-      const html = makeOverlayHtml(grid.cols, grid.rows)
-      win.loadURL(`data:text/html;charset=utf-8,${html}`)
+      win.loadURL(`data:text/html;charset=utf-8,${OVERLAY_HTML}`)
 
       win.webContents.once('did-finish-load', () => {
         const e = this.entries.get(display.id)
@@ -105,6 +103,12 @@ export class OverlayManager {
     }
 
     // Accumulate: once a chunk is active it stays active until hideAll().
+    // If resolution changed and grid dimensions differ, reset the buffer.
+    if (entry.cols !== grid.cols || entry.rows !== grid.rows) {
+      entry.cols = grid.cols
+      entry.rows = grid.rows
+      entry.active = new Uint8Array(grid.cols * grid.rows)
+    }
     for (let i = 0; i < grid.active.length; i++) {
       if (grid.active[i]) entry.active[i] = 1
     }
@@ -127,7 +131,7 @@ export class OverlayManager {
     if (entry.win.isDestroyed()) return
     const arr = JSON.stringify(Array.from(entry.active))
     entry.win.webContents
-      .executeJavaScript(`window.drawGrid && window.drawGrid(${arr})`)
+      .executeJavaScript(`window.drawGrid && window.drawGrid(${entry.cols},${entry.rows},${arr})`)
       .catch(() => { /* window may have been destroyed */ })
   }
 }

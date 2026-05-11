@@ -3,13 +3,12 @@ import { Region } from '../../shared/ipc-types'
 
 export type { Region }
 
-const GRID_COLS = 100
-const GRID_ROWS = 100
+const CHUNK_PX = 10  // physical pixels per chunk side
 
 export interface ChunkGrid {
-  cols: number         // always GRID_COLS
-  rows: number         // always GRID_ROWS
-  active: Uint8Array   // length = cols * rows; 1 = has changed pixels, 0 = unchanged
+  cols: number        // Math.ceil(frameWidth  / CHUNK_PX)
+  rows: number        // Math.ceil(frameHeight / CHUNK_PX)
+  active: Uint8Array  // length = cols * rows; 1 = has changed pixels, 0 = unchanged
 }
 
 export interface ChangeResult {
@@ -62,19 +61,19 @@ export function hasSignificantChange(
   const bytesPerPixel = 4   // BGRA
   const tolerance = 30
 
-  const active = new Uint8Array(GRID_COLS * GRID_ROWS)
+  const cols = Math.ceil(width  / CHUNK_PX)
+  const rows = Math.ceil(height / CHUNK_PX)
+
+  const active = new Uint8Array(cols * rows)
   let changedChunks = 0
   let relevantChunks = 0
 
-  const chunkW = width  / GRID_COLS
-  const chunkH = height / GRID_ROWS
-
-  for (let gy = 0; gy < GRID_ROWS; gy++) {
-    for (let gx = 0; gx < GRID_COLS; gx++) {
-      const x0 = Math.round(gx * chunkW)
-      const y0 = Math.round(gy * chunkH)
-      const x1 = Math.round((gx + 1) * chunkW)
-      const y1 = Math.round((gy + 1) * chunkH)
+  for (let gy = 0; gy < rows; gy++) {
+    for (let gx = 0; gx < cols; gx++) {
+      const x0 = gx * CHUNK_PX
+      const y0 = gy * CHUNK_PX
+      const x1 = Math.min(x0 + CHUNK_PX, width)
+      const y1 = Math.min(y0 + CHUNK_PX, height)
       const cw = x1 - x0
       const ch = y1 - y0
 
@@ -98,7 +97,7 @@ export function hasSignificantChange(
             Math.abs(prev[i + 1] - curr[i + 1]) > tolerance ||
             Math.abs(prev[i + 2] - curr[i + 2]) > tolerance
           ) {
-            active[gy * GRID_COLS + gx] = 1
+            active[gy * cols + gx] = 1
             changedChunks++
             break outer
           }
@@ -112,6 +111,6 @@ export function hasSignificantChange(
   const changed = (changedChunks / relevantChunks) * 100 >= sensitivityPct
   return {
     changed,
-    grid: changed ? { cols: GRID_COLS, rows: GRID_ROWS, active } : null
+    grid: changed ? { cols, rows, active } : null
   }
 }
