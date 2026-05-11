@@ -7,18 +7,25 @@ import { SERVER_URL } from './constants'
 
 let qrWindow: BrowserWindow | null = null
 
-async function createPairingToken(desktopId: string, apiKey: string): Promise<string | null> {
+async function createPairingToken(
+  desktopId: string,
+  apiKey: string
+): Promise<{ token: string } | { error: string }> {
   try {
     const res = await fetch(`${SERVER_URL}/api/pairing/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ desktopId, apiKey })
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      let body = ''
+      try { body = await res.text() } catch { /* ignore */ }
+      return { error: `HTTP ${res.status} ${res.statusText} — ${body}` }
+    }
     const { token } = (await res.json()) as { token: string; expiresAt: string }
-    return token
-  } catch {
-    return null
+    return { token }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -66,13 +73,14 @@ export async function openQRWindow(config: ConfigStore): Promise<PairResult> {
     }
   }
 
-  const token = await createPairingToken(desktopId, apiKey)
-  if (!token) {
+  const tokenResult = await createPairingToken(desktopId, apiKey)
+  if ('error' in tokenResult) {
     return {
       ok: false,
-      error: `Could not create a pairing token. The server may be unreachable (${SERVER_URL}).`
+      error: `Could not create a pairing token.\nServer: ${SERVER_URL}\nDetail: ${tokenResult.error}`
     }
   }
+  const { token } = tokenResult
 
   // QR payload: versioned so the mobile app can parse it.
   const qrPayload = JSON.stringify({ v: 1, token, server: SERVER_URL })
