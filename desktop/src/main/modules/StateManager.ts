@@ -119,11 +119,12 @@ export class StateManager extends EventEmitter {
       if (result.changed) {
         if (result.bbox) this.overlay.add(result.bbox, frame.display)
 
-        if (cfg.remoteNotifications) {
-          this.remote.notify(crypto.randomUUID())
-        }
-
         if (this._current !== 'alarm') {
+          // Only push on the first change that triggers the alarm;
+          // additional overlays while already alarming don't re-notify.
+          if (cfg.remoteNotifications) {
+            this.remote.notify(crypto.randomUUID())
+          }
           this.alarm.trigger(cfg.alarmInterval)
           this.transition('alarm')
         }
