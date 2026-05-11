@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, screen, Display } from 'electron'
+import { BrowserWindow, globalShortcut, ipcMain, screen, Display } from 'electron'
 import { join } from 'path'
 import { WatchArea } from '../../shared/ipc-types'
 
@@ -128,9 +128,12 @@ export function selectArea(): Promise<WatchArea | null> {
       if (resolved) return
       resolved = true
       ipcMain.removeListener(RESULT_CHANNEL, onResult)
+      try { globalShortcut.unregister('Escape') } catch { /* ignore */ }
       windows.forEach((w) => { if (!w.isDestroyed()) w.close() })
       resolve(result)
     }
+
+    try { globalShortcut.register('Escape', () => done(null)) } catch { /* ignore */ }
 
     function onResult(
       _event: Electron.IpcMainEvent,

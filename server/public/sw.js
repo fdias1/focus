@@ -15,6 +15,8 @@ self.addEventListener('push', (event) => {
 
   if (type === 'clear') {
     // Silent push — no notification shown, just message open pages to clear their list.
+    // Drop the message if desktopId is missing so we don't wipe ALL notifications.
+    if (!desktopId) return
     event.waitUntil(
       self.clients
         .matchAll({ type: 'window', includeUncontrolled: true })
@@ -26,6 +28,7 @@ self.addEventListener('push', (event) => {
   // type === 'alert'
   const title = data.title || 'Focus — Change detected'
   const body = data.body || 'A change was detected on your screen.'
+  const notifId = `${desktopId || 'unknown'}-${Date.now()}`
 
   event.waitUntil(
     Promise.all([
@@ -46,7 +49,7 @@ self.addEventListener('push', (event) => {
             c.postMessage({
               type: 'alert',
               notification: {
-                id: (data.data && data.data.bountyBoxId) || crypto.randomUUID(),
+                id: notifId,
                 desktopId,
                 title,
                 body,

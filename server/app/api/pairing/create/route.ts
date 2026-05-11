@@ -23,16 +23,26 @@ export async function POST(req: Request) {
   const desktopId = await validateDesktop(parsed.data)
   if (!desktopId) return err('unauthorized', 401)
 
-  const token = randomToken()
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
 
   // Clean up expired tokens before creating a new one
   await db.delete(pairingTokens).where(lt(pairingTokens.expiresAt, new Date()))
 
-  await db
-    .insert(pairingTokens)
-    .values({ token, desktopId, expiresAt })
-    .onConflictDoNothing()
+  // Retry on collision so we never return a token bound to someone else's desktop.
+  let token: string | null = null
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = randomToken()
+    const inserted = await db
+      .insert(pairingTokens)
+      .values({ token: candidate, desktopId, expiresAt })
+      .onConflictDoNothing()
+      .returning({ token: pairingTokens.token })
+    if (inserted.length > 0) {
+      token = inserted[0].token
+      break
+    }
+  }
+  if (!token) return err('could not allocate token, retry', 503)
 
   return json({ token, expiresAt: expiresAt.toISOString() }, 201)
 }

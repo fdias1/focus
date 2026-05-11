@@ -45,7 +45,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>({
     inactivityThreshold: 30,
     snapshotInterval: 5,
-    changeSensitivity: 0.1,
+    changeSensitivity: 10,
     alarmInterval: 60,
     watchAreas: [],
     localNotifications: true,
@@ -162,10 +162,10 @@ export default function App() {
         <Setting
           label="Change sensitivity"
           value={config.changeSensitivity}
-          min={0.01}
-          max={1}
-          step={0.01}
-          decimals={2}
+          min={0.1}
+          max={100}
+          step={0.1}
+          decimals={1}
           unit="%"
           onChange={(v) => updateConfig({ changeSensitivity: v })}
         />

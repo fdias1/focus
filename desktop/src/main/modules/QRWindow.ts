@@ -36,18 +36,23 @@ async function waitForPairing(
   signal: AbortSignal
 ): Promise<boolean> {
   while (!signal.aborted) {
-    await new Promise((r) => setTimeout(r, 3000))
+    await new Promise<void>((r) => {
+      const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); r() }, 3000)
+      const onAbort = (): void => { clearTimeout(t); r() }
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
     if (signal.aborted) break
     try {
       const res = await fetch(`${SERVER_URL}/api/pairings/desktop/${desktopId}`, {
-        headers: { 'x-api-key': apiKey }
+        headers: { 'x-api-key': apiKey },
+        signal
       })
       if (res.ok) {
         const pairings = (await res.json()) as unknown[]
         if (pairings.length > previousCount) return true
       }
     } catch {
-      // ignore network hiccups — keep polling
+      // ignore network hiccups / abort — keep polling or exit on next loop guard
     }
   }
   return false
@@ -117,6 +122,16 @@ export async function openQRWindow(config: ConfigStore): Promise<PairResult> {
 </body>
 </html>`)
 
+  // Count current pairings BEFORE showing the QR so we don't miss a confirm
+  // that races in while we're still setting up the poll.
+  let previousCount = 0
+  try {
+    const res = await fetch(`${SERVER_URL}/api/pairings/desktop/${desktopId}`, {
+      headers: { 'x-api-key': apiKey }
+    })
+    if (res.ok) previousCount = ((await res.json()) as unknown[]).length
+  } catch { /* ignore */ }
+
   qrWindow = new BrowserWindow({
     width: 300,
     height: 360,
@@ -128,15 +143,6 @@ export async function openQRWindow(config: ConfigStore): Promise<PairResult> {
   })
   qrWindow.setMenu(null)
   qrWindow.loadURL(`data:text/html;charset=utf-8,${html}`)
-
-  // Count current pairings so we know when a new one is added.
-  let previousCount = 0
-  try {
-    const res = await fetch(`${SERVER_URL}/api/pairings/desktop/${desktopId}`, {
-      headers: { 'x-api-key': apiKey }
-    })
-    if (res.ok) previousCount = ((await res.json()) as unknown[]).length
-  } catch { /* ignore */ }
 
   const controller = new AbortController()
   qrWindow.on('closed', () => {

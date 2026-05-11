@@ -1,20 +1,37 @@
 import Store from 'electron-store'
 import { AppConfig, WatchArea } from '../../shared/ipc-types'
 
+function isValidWatchArea(v: unknown): v is WatchArea {
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.displayId === 'number' && Number.isFinite(o.displayId) &&
+    typeof o.x === 'number' && Number.isFinite(o.x) && o.x >= 0 &&
+    typeof o.y === 'number' && Number.isFinite(o.y) && o.y >= 0 &&
+    typeof o.width === 'number' && Number.isFinite(o.width) && o.width > 0 &&
+    typeof o.height === 'number' && Number.isFinite(o.height) && o.height > 0
+  )
+}
+
+function sanitizeWatchAreas(raw: unknown): WatchArea[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter(isValidWatchArea)
+}
+
 type NumericKey = 'inactivityThreshold' | 'snapshotInterval' | 'changeSensitivity' | 'alarmInterval'
 type BooleanKey = 'localNotifications' | 'remoteNotifications'
 
 const NUMERIC_DEFAULTS: Record<NumericKey, number> = {
   inactivityThreshold: 30,
   snapshotInterval: 5,
-  changeSensitivity: 0.1,
+  changeSensitivity: 10,
   alarmInterval: 60
 }
 
 const BOUNDS: Record<NumericKey, [number, number]> = {
   inactivityThreshold: [5, 3600],
   snapshotInterval: [1, 60],
-  changeSensitivity: [0.01, 1],
+  changeSensitivity: [0.1, 100],
   alarmInterval: [10, 3600]
 }
 
@@ -59,7 +76,7 @@ export class ConfigStore {
       snapshotInterval: this.clamp('snapshotInterval', this.store.get('snapshotInterval')),
       changeSensitivity: this.clamp('changeSensitivity', this.store.get('changeSensitivity')),
       alarmInterval: this.clamp('alarmInterval', this.store.get('alarmInterval')),
-      watchAreas: (this.store.get('watchAreas') as WatchArea[]) ?? [],
+      watchAreas: sanitizeWatchAreas(this.store.get('watchAreas')),
       localNotifications: this.store.get('localNotifications'),
       remoteNotifications: this.store.get('remoteNotifications')
     }
@@ -77,7 +94,7 @@ export class ConfigStore {
       }
     }
     if ('watchAreas' in partial) {
-      this.store.set('watchAreas', partial.watchAreas ?? [])
+      this.store.set('watchAreas', sanitizeWatchAreas(partial.watchAreas ?? []))
     }
   }
 

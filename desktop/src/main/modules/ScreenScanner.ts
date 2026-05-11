@@ -34,10 +34,17 @@ export async function requestScreenPermission(): Promise<'granted' | 'denied' | 
 
 export class ScreenScanner extends EventEmitter {
   private timer: NodeJS.Timeout | null = null
+  private started = false
 
   start(intervalSeconds: number): void {
+    const wasRunning = this.started
     this.stop()
-    this.capture()
+    this.started = true
+    // Only capture immediately on a cold start. A restart (e.g. interval change
+    // while already monitoring) preserves the existing prevFrame, so we wait
+    // a full interval before the next snapshot — avoids shrinking the change
+    // window to a few ms.
+    if (!wasRunning) this.capture()
     this.timer = setInterval(() => this.capture(), intervalSeconds * 1000)
   }
 
@@ -46,6 +53,7 @@ export class ScreenScanner extends EventEmitter {
       clearInterval(this.timer)
       this.timer = null
     }
+    this.started = false
   }
 
   private async capture(): Promise<void> {
@@ -72,13 +80,29 @@ export class ScreenScanner extends EventEmitter {
         return
       }
 
+      const used = new Set<string>()
+
       for (const display of displays) {
-        // Match source to display: Electron sets display_id on macOS/Windows.
-        const source =
-          sources.find((s) => s.display_id === String(display.id)) ??
-          sources[displays.indexOf(display)] // fallback: positional match
+        const expectedW = Math.round(display.bounds.width * display.scaleFactor)
+        const expectedH = Math.round(display.bounds.height * display.scaleFactor)
+
+        // Primary match: display_id (set on macOS/Windows).
+        let source = sources.find(
+          (s) => !used.has(s.id) && s.display_id === String(display.id)
+        )
+
+        // Secondary match: thumbnail size matches the display's physical resolution.
+        // Resilient to display_id being unset (some Linux/Wayland builds).
+        if (!source) {
+          source = sources.find((s) => {
+            if (used.has(s.id)) return false
+            const sz = s.thumbnail.getSize()
+            return sz.width === expectedW && sz.height === expectedH
+          })
+        }
 
         if (!source) continue
+        used.add(source.id)
 
         const image = source.thumbnail
         const { width, height } = image.getSize()
@@ -93,7 +117,12 @@ export class ScreenScanner extends EventEmitter {
         this.emit('frame', frame)
       }
     } catch (e) {
-      this.emit('permissionDenied')
+      console.error('[ScreenScanner] capture failed:', e)
+      if (process.platform === 'darwin' && getScreenPermissionStatus() !== 'granted') {
+        this.emit('permissionDenied')
+      } else {
+        this.emit('captureError', e)
+      }
     }
   }
 }

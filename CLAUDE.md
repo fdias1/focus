@@ -46,10 +46,13 @@ All time values are stored internally in **seconds**.
 
 ```typescript
 {
-  inactivityThreshold: number  // default: 30
-  snapshotInterval:    number  // default: 5
-  changeSensitivity:   number  // default: 10  (percentage 0–100)
-  alarmInterval:       number  // default: 60
+  inactivityThreshold: number      // default: 30
+  snapshotInterval:    number      // default: 5
+  changeSensitivity:   number      // default: 10  (percentage 0.1–100)
+  alarmInterval:       number      // default: 60
+  watchAreas:          WatchArea[] // empty = monitor every display fully
+  localNotifications:  boolean     // default: true  — OS sound alarm
+  remoteNotifications: boolean     // default: false — push to paired mobiles
 }
 ```
 

@@ -25,22 +25,23 @@ const OVERLAY_HTML = encodeURIComponent(`<!DOCTYPE html>
   var ctx = c.getContext('2d');
 
   // cols/rows are passed each call because chunk count depends on physical resolution.
-  window.drawGrid = function(cols, rows, active) {
+  // active is a base64-encoded Uint8Array; 1 byte per chunk, 1 = changed.
+  window.drawGridB64 = function(cols, rows, b64) {
+    var bin = atob(b64);
+    var active = new Uint8Array(bin.length);
+    for (var k = 0; k < bin.length; k++) active[k] = bin.charCodeAt(k);
     c.width  = window.innerWidth;
     c.height = window.innerHeight;
     var cw = c.width  / cols;
     var ch = c.height / rows;
-    // Fill everything dark first, then cut out the active chunks.
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.fillRect(0, 0, c.width, c.height);
-    ctx.clearRect(0, 0, 0, 0); // no-op, just keeps intent clear
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillStyle = 'rgba(0,0,0,1)';
     for (var i = 0; i < active.length; i++) {
       if (active[i]) {
         var col = i % cols;
         var row = Math.floor(i / cols);
-        // Use exact floats so adjacent chunks share an edge with no gap or overlap.
         var x0 = col * cw, y0 = row * ch;
         ctx.fillRect(x0, y0, (col + 1) * cw - x0, (row + 1) * ch - y0);
       }
@@ -82,6 +83,9 @@ interface Entry {
   ready: boolean
   // Grid pending draw if the window wasn't ready yet.
   pendingDraw: boolean
+  // True when `active` changed since the last redraw — avoids re-sending an
+  // unchanged grid on every snapshot frame.
+  dirty: boolean
 }
 
 export class OverlayManager {
@@ -95,7 +99,7 @@ export class OverlayManager {
     if (!entry) {
       const win = createOverlayWindow(display)
       const active = new Uint8Array(grid.cols * grid.rows)
-      entry = { win, cols: grid.cols, rows: grid.rows, active, ready: false, pendingDraw: false }
+      entry = { win, cols: grid.cols, rows: grid.rows, active, ready: false, pendingDraw: false, dirty: true }
       this.entries.set(display.id, entry)
 
       win.loadURL(`data:text/html;charset=utf-8,${OVERLAY_HTML}`)
@@ -116,10 +120,16 @@ export class OverlayManager {
       entry.cols = grid.cols
       entry.rows = grid.rows
       entry.active = new Uint8Array(grid.cols * grid.rows)
+      entry.dirty = true
     }
     for (let i = 0; i < grid.active.length; i++) {
-      if (grid.active[i]) entry.active[i] = 1
+      if (grid.active[i] && !entry.active[i]) {
+        entry.active[i] = 1
+        entry.dirty = true
+      }
     }
+
+    if (!entry.dirty) return
 
     if (entry.ready) {
       this.redraw(entry)
@@ -145,9 +155,14 @@ export class OverlayManager {
 
   private redraw(entry: Entry): void {
     if (entry.win.isDestroyed()) return
-    const arr = JSON.stringify(Array.from(entry.active))
+    // Encode the Uint8Array as base64 — ~6× smaller payload than a JSON array
+    // and avoids parsing tens of thousands of comma-separated tokens.
+    const b64 = Buffer.from(entry.active).toString('base64')
     entry.win.webContents
-      .executeJavaScript(`window.drawGrid && window.drawGrid(${entry.cols},${entry.rows},${arr})`)
+      .executeJavaScript(
+        `window.drawGridB64 && window.drawGridB64(${entry.cols},${entry.rows},"${b64}")`
+      )
       .catch(() => { /* window may have been destroyed */ })
+    entry.dirty = false
   }
 }

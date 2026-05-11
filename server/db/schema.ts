@@ -43,22 +43,14 @@ export const webPushSubscriptions = pgTable(
     clientId: uuid('client_id')
       .notNull()
       .references(() => clientDevices.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull(),
     // Full PushSubscription JSON: { endpoint, keys: { p256dh, auth } }
     subscription: text('subscription').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
   },
-  (t) => [index('web_push_client_idx').on(t.clientId)]
+  (t) => [
+    index('web_push_client_idx').on(t.clientId),
+    unique('web_push_client_endpoint_uniq').on(t.clientId, t.endpoint)
+  ]
 )
 
-// One row per (bountyBoxId, desktopId) — prevents duplicate push deliveries.
-export const notifications = pgTable(
-  'notifications',
-  {
-    id: uuid('id').notNull(),
-    desktopId: uuid('desktop_id')
-      .notNull()
-      .references(() => desktopDevices.id, { onDelete: 'cascade' }),
-    sentAt: timestamp('sent_at', { withTimezone: true }).defaultNow().notNull()
-  },
-  (t) => [unique().on(t.id, t.desktopId)]
-)

@@ -18,7 +18,7 @@ export interface WatchArea {
 export interface AppConfig {
   inactivityThreshold: number  // seconds, default 30
   snapshotInterval: number     // seconds, default 5
-  changeSensitivity: number    // percentage 0.01–1, default 0.1
+  changeSensitivity: number    // percentage 0.1–100, default 10
   alarmInterval: number        // seconds, default 60
   watchAreas: WatchArea[]      // empty = monitor all displays at full
   localNotifications: boolean  // OS sound alarm, default true

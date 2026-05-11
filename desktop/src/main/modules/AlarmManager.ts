@@ -6,11 +6,15 @@ export interface Notifier {
 
 class OsNotifier implements Notifier {
   notify(): void {
+    const onDone = (err: Error | null): void => {
+      if (err) console.error('[AlarmManager] sound playback failed:', err.message)
+    }
     if (process.platform === 'darwin') {
-      exec('afplay /System/Library/Sounds/Ping.aiff')
+      exec('afplay /System/Library/Sounds/Ping.aiff', onDone)
     } else if (process.platform === 'win32') {
       exec(
-        'powershell -c (New-Object Media.SoundPlayer "C:\\Windows\\Media\\notify.wav").PlaySync()'
+        'powershell -c (New-Object Media.SoundPlayer "C:\\Windows\\Media\\notify.wav").PlaySync()',
+        onDone
       )
     }
   }

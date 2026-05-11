@@ -6,8 +6,9 @@ import { z } from 'zod'
 
 const Body = z.object({ desktopId: z.string().uuid() })
 
-// Idempotent: calling again with the same desktopId returns the existing record.
-// The apiKey is only returned on first creation.
+// Idempotent: calling again with the same desktopId acknowledges registration
+// but does NOT return the apiKey — it is only returned at the 201 creation.
+// A desktop that loses its credentials must re-register with a fresh UUID.
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json())
   if (!parsed.success) return err('desktopId (UUID) is required')
@@ -15,12 +16,12 @@ export async function POST(req: Request) {
   const { desktopId } = parsed.data
 
   const [existing] = await db
-    .select()
+    .select({ id: desktopDevices.id })
     .from(desktopDevices)
     .where(eq(desktopDevices.id, desktopId))
     .limit(1)
 
-  if (existing) return json({ desktopId: existing.id, apiKey: existing.apiKey })
+  if (existing) return json({ desktopId: existing.id })
 
   const apiKey = crypto.randomUUID().replace(/-/g, '')
   await db.insert(desktopDevices).values({ id: desktopId, apiKey })

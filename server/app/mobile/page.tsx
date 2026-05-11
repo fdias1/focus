@@ -31,6 +31,7 @@ interface StoredNotification {
 }
 
 const NOTIF_KEY = 'focus_notifications'
+const NOTIF_MAX = 100
 
 function loadNotifications(): StoredNotification[] {
   try {
@@ -41,7 +42,7 @@ function loadNotifications(): StoredNotification[] {
 }
 
 function saveNotifications(list: StoredNotification[]): void {
-  localStorage.setItem(NOTIF_KEY, JSON.stringify(list))
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(list.slice(0, NOTIF_MAX)))
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +117,7 @@ export default function MobilePage() {
         if (msg.type === 'alert' && msg.notification) {
           setNotifications((prev) => {
             if (prev.some((n) => n.id === msg.notification!.id)) return prev
-            const next = [msg.notification!, ...prev]
+            const next = [msg.notification!, ...prev].slice(0, NOTIF_MAX)
             saveNotifications(next)
             return next
           })
@@ -170,7 +171,9 @@ export default function MobilePage() {
   const fetchPairings = useCallback(async (id?: string) => {
     const cid = id ?? clientId
     if (!cid) return
-    const res = await fetch(`/api/pairings/client/${cid}`)
+    const res = await fetch(`/api/pairings/client/${cid}`, {
+      headers: { 'x-client-id': cid }
+    })
     if (res.ok) setPairings(await res.json())
   }, [clientId])
 
@@ -326,25 +329,30 @@ export default function MobilePage() {
 
   async function confirmPairing(token: string) {
     setStatus('Pairing…')
-    const res = await fetch('/api/pairing/confirm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: token.trim().toUpperCase(),
-        clientId,
-        nickname: nickname.trim() || undefined
+    try {
+      const res = await fetch('/api/pairing/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: token.trim().toUpperCase(),
+          clientId,
+          nickname: nickname.trim() || undefined
+        })
       })
-    })
-    if (res.ok) {
-      setStatus('Paired successfully!')
-      setPendingToken('')
-      setManualToken('')
-      setNickname('')
-      setScreen('home')
-      fetchPairings()
-    } else {
-      const { error } = await res.json()
-      setStatus(`Error: ${error}`)
+      if (res.ok) {
+        setStatus('Paired successfully!')
+        setPendingToken('')
+        setManualToken('')
+        setNickname('')
+        setScreen('home')
+        fetchPairings()
+      } else {
+        const { error } = await res.json().catch(() => ({ error: 'unknown error' }))
+        setStatus(`Error: ${error}`)
+        setScreen('home')
+      }
+    } catch {
+      setStatus('Network error — try again.')
       setScreen('home')
     }
   }
@@ -353,8 +361,7 @@ export default function MobilePage() {
     if (!confirm('Remove this desktop?')) return
     await fetch(`/api/pairing/${pairingId}`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId })
+      headers: { 'x-client-id': clientId }
     })
     fetchPairings()
   }

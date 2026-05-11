@@ -7,10 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to publish (e.g. v0.2.0)'
+        description: 'Tag to publish (e.g. v0.2.1)'
         required: true
 
-# Needed so the workflow can create/edit GitHub Releases and upload assets.
 permissions:
   contents: write
 
@@ -20,13 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Apple Silicon
-          - os: macos-15
+          - os: macos-15        # Apple Silicon
             build_args: --mac --arm64
-          # Intel Mac
-          - os: macos-13
+          - os: macos-13        # Intel Mac
             build_args: --mac --x64
-          # Windows
           - os: windows-latest
             build_args: --win --x64
 
@@ -36,29 +32,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install root dependencies
-        run: npm install
+      # Detach desktop/ from the npm workspace before installing. The root
+      # package.json declares workspaces:[desktop, server], which causes
+      # `npm install` to hoist app-builder-bin into the root node_modules.
+      # Its per-arch native binaries are wired via optionalDependencies and
+      # don't get resolved reliably under workspace hoisting on macOS/Windows
+      # runners — electron-builder then fails with:
+      #   spawn .../node_modules/app-builder-bin/mac/app-builder_arm64 ENOENT
+      # Renaming the root manifest makes npm treat desktop/ as a standalone
+      # project, so deps install into desktop/node_modules with correct arch.
+      - name: Detach desktop from npm workspace
+        shell: bash
+        run: mv package.json _package.workspace.json
 
-      # electron-builder depends on app-builder-bin, whose pre-compiled binary is
-      # platform-specific. Installing electron-builder locally inside desktop/ ensures
-      # Node's module resolution finds the correct platform binary from desktop/node_modules
-      # instead of the workspace-hoisted copy in the root (which may have the wrong arch).
-      - name: Install electron-builder locally in desktop
-        run: npm install --save-dev electron-builder
+      - name: Install desktop dependencies
         working-directory: desktop
+        shell: bash
+        run: npm install --include=optional --no-audit --no-fund
 
-      - name: Build & publish
+      - name: Build renderer & main bundles
         working-directory: desktop
+        shell: bash
+        run: npx electron-vite build
+
+      - name: Verify app-builder binary is present
+        working-directory: desktop
+        shell: bash
+        run: |
+          echo "app-builder-bin contents:"
+          ls -laR node_modules/app-builder-bin || (echo "app-builder-bin not installed" && exit 1)
+
+      - name: Package & publish
+        working-directory: desktop
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Distributes as unsigned DMG — users must right-click → Open on first launch.
-          # To enable notarization, add CSC_LINK, CSC_KEY_PASSWORD and
-          # APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID secrets.
+          # Distributes unsigned. Users right-click → Open on first macOS launch.
+          # To sign/notarize: add CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID,
+          # APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID secrets and drop this line.
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-vite build && npx electron-builder ${{ matrix.build_args }} --publish always
+        run: npx electron-builder ${{ matrix.build_args }} --publish always

@@ -98,6 +98,12 @@ export class StateManager extends EventEmitter {
     if (this._current !== 'monitoring' && this._current !== 'alarm') return
 
     const prev = this.prevFrames.get(frame.display.id)
+    if (prev && (prev.width !== frame.width || prev.height !== frame.height)) {
+      // Resolution changed (rotation, DPI switch, monitor reconnect with same id).
+      // Discard the stale prev and store this frame as the new baseline.
+      this.prevFrames.set(frame.display.id, frame)
+      return
+    }
     if (prev) {
       const cfg = this.config.get()
       this.alarm.setLocalEnabled(cfg.localNotifications)
@@ -128,7 +134,7 @@ export class StateManager extends EventEmitter {
           // Only push on the first change that triggers the alarm;
           // additional overlays while already alarming don't re-notify.
           if (cfg.remoteNotifications) {
-            this.remote.notify(crypto.randomUUID())
+            this.remote.notify()
           }
           this.alarm.trigger(cfg.alarmInterval)
           this.transition('alarm')

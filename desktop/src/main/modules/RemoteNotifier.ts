@@ -9,14 +9,14 @@ export class RemoteNotifier {
   constructor(private readonly config: ConfigStore) {}
 
   /** Notify paired devices that a screen change was detected. */
-  notify(bountyBoxId: string): void {
+  notify(): void {
     const { desktopId, apiKey } = this.config.getServerCredentials()
     if (!desktopId || !apiKey) return
 
     fetch(`${SERVER_URL}/api/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ desktopId, apiKey, bountyBoxId })
+      body: JSON.stringify({ desktopId, apiKey })
     }).catch(() => {})
   }
 

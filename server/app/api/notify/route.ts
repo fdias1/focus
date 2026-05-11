@@ -1,5 +1,5 @@
 import { db } from '@/db'
-import { notifications, pairings, clientDevices, webPushSubscriptions } from '@/db/schema'
+import { pairings, clientDevices, webPushSubscriptions } from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
 import { sendWebPush } from '@/lib/webpush'
 import { eq, inArray } from 'drizzle-orm'
@@ -7,28 +7,16 @@ import { z } from 'zod'
 
 const Body = z.object({
   desktopId: z.string().uuid(),
-  apiKey: z.string().min(1),
-  bountyBoxId: z.string().uuid()
+  apiKey: z.string().min(1)
 })
 
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json())
-  if (!parsed.success) return err('desktopId, apiKey and bountyBoxId are required')
-
-  const { bountyBoxId } = parsed.data
+  if (!parsed.success) return err('desktopId and apiKey are required')
 
   const desktopId = await validateDesktop(parsed.data)
   if (!desktopId) return err('unauthorized', 401)
 
-  // Dedup: skip if this bounty box was already notified (conflict = duplicate).
-  const inserted = await db
-    .insert(notifications)
-    .values({ id: bountyBoxId, desktopId })
-    .onConflictDoNothing()
-    .returning()
-  if (inserted.length === 0) return json({ ok: true, skipped: true })
-
-  // Find all paired clients
   const paired = await db
     .select({
       clientId: clientDevices.id,
@@ -43,29 +31,42 @@ export async function POST(req: Request) {
     nickname ? `On "${nickname}"` : 'A change was detected on your screen.'
 
   const clientIds = paired.map((p) => p.clientId)
-  let webPushSent = 0
+  if (clientIds.length === 0) return json({ ok: true, web: 0 })
 
-  if (clientIds.length > 0) {
-    const webSubs = await db
-      .select({ id: webPushSubscriptions.id, subscription: webPushSubscriptions.subscription, clientId: webPushSubscriptions.clientId })
-      .from(webPushSubscriptions)
-      .where(inArray(webPushSubscriptions.clientId, clientIds))
+  const webSubs = await db
+    .select({
+      id: webPushSubscriptions.id,
+      subscription: webPushSubscriptions.subscription,
+      clientId: webPushSubscriptions.clientId
+    })
+    .from(webPushSubscriptions)
+    .where(inArray(webPushSubscriptions.clientId, clientIds))
 
-    const clientNickname = Object.fromEntries(paired.map((p) => [p.clientId, p.pairingNickname]))
+  const clientNickname = Object.fromEntries(paired.map((p) => [p.clientId, p.pairingNickname]))
 
-    for (const sub of webSubs) {
-      const expired = await sendWebPush([{ id: sub.id, subscription: sub.subscription }], {
-        type: 'alert',
-        title: notifTitle,
-        body: notifBody(clientNickname[sub.clientId] ?? null),
-        data: { bountyBoxId, desktopId }
-      })
-      if (expired.length > 0) {
-        await db.delete(webPushSubscriptions).where(inArray(webPushSubscriptions.id, expired))
-      }
-      webPushSent++
-    }
+  // Group subs by nickname so we can batch sends with identical payloads.
+  const byBody = new Map<string, typeof webSubs>()
+  for (const s of webSubs) {
+    const body = notifBody(clientNickname[s.clientId] ?? null)
+    const list = byBody.get(body) ?? []
+    list.push(s)
+    byBody.set(body, list)
   }
 
-  return json({ ok: true, web: webPushSent })
+  let expired: string[] = []
+  await Promise.all(
+    Array.from(byBody.entries()).map(async ([body, subs]) => {
+      const result = await sendWebPush(
+        subs.map((s) => ({ id: s.id, subscription: s.subscription })),
+        { type: 'alert', title: notifTitle, body, data: { desktopId } }
+      )
+      expired = expired.concat(result)
+    })
+  )
+
+  if (expired.length > 0) {
+    await db.delete(webPushSubscriptions).where(inArray(webPushSubscriptions.id, expired))
+  }
+
+  return json({ ok: true, web: webSubs.length - expired.length })
 }

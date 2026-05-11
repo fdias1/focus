@@ -42,7 +42,9 @@ export default function AdminPage() {
   }, [])
 
   async function fetchPairings(id = clientId) {
-    const res = await fetch(`${SERVER}/api/pairings/client/${id}`)
+    const res = await fetch(`${SERVER}/api/pairings/client/${id}`, {
+      headers: { 'x-client-id': id }
+    })
     if (res.ok) setPairings(await res.json())
   }
 
@@ -68,8 +70,7 @@ export default function AdminPage() {
   async function removePairing(pairingId: string) {
     await fetch(`${SERVER}/api/pairing/${pairingId}`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId })
+      headers: { 'x-client-id': clientId }
     })
     fetchPairings()
   }

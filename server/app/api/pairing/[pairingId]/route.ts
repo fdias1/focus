@@ -1,24 +1,18 @@
 import { db } from '@/db'
-import { pairings } from '@/db/schema'
+import { pairings, desktopDevices } from '@/db/schema'
 import { err, json } from '@/lib/auth'
 import { eq } from 'drizzle-orm'
-import { z } from 'zod'
-
-const Body = z.object({
-  clientId: z.string().uuid().optional(),
-  desktopId: z.string().uuid().optional(),
-  apiKey: z.string().optional()
-})
 
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ pairingId: string }> }
 ) {
   const { pairingId } = await params
-  const parsed = Body.safeParse(await req.json())
-  if (!parsed.success) return err('invalid body')
+  const clientId = req.headers.get('x-client-id')
+  const desktopId = req.headers.get('x-desktop-id')
+  const apiKey = req.headers.get('x-api-key')
 
-  const { clientId, desktopId } = parsed.data
+  if (!clientId && !desktopId) return err('missing auth headers')
 
   const [pairing] = await db
     .select()
@@ -28,10 +22,17 @@ export async function DELETE(
 
   if (!pairing) return err('pairing not found', 404)
 
-  // Caller must own one side of the pairing
-  const authorized =
-    (clientId && pairing.clientId === clientId) ||
-    (desktopId && pairing.desktopId === desktopId)
+  let authorized = false
+  if (clientId && pairing.clientId === clientId) {
+    authorized = true
+  } else if (desktopId && pairing.desktopId === desktopId && apiKey) {
+    const [device] = await db
+      .select({ apiKey: desktopDevices.apiKey })
+      .from(desktopDevices)
+      .where(eq(desktopDevices.id, desktopId))
+      .limit(1)
+    if (device && device.apiKey === apiKey) authorized = true
+  }
 
   if (!authorized) return err('unauthorized', 401)
 
