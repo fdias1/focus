@@ -3,9 +3,18 @@ import { Region } from '../../shared/ipc-types'
 
 export type { Region }
 
+const GRID_COLS = 100
+const GRID_ROWS = 100
+
+export interface ChunkGrid {
+  cols: number         // always GRID_COLS
+  rows: number         // always GRID_ROWS
+  active: Uint8Array   // length = cols * rows; 1 = has changed pixels, 0 = unchanged
+}
+
 export interface ChangeResult {
   changed: boolean
-  bbox: Region | null // bounding box of changed pixels in physical frame coordinates
+  grid: ChunkGrid | null
 }
 
 // Returns the tray/taskbar region to exclude from diff comparisons, in physical
@@ -33,9 +42,14 @@ function pixelInRegion(px: number, py: number, r: Region): boolean {
   return px >= r.x && px < r.x + r.width && py >= r.y && py < r.y + r.height
 }
 
-// Returns whether the changed area exceeds sensitivityPct plus the bounding box
-// of all changed pixels (in physical frame coordinates).
-// watchAreas: if non-empty, only pixels within one of those regions are checked.
+function rectsIntersect(ax: number, ay: number, aw: number, ah: number, r: Region): boolean {
+  return ax < r.x + r.width && ax + aw > r.x && ay < r.y + r.height && ay + ah > r.y
+}
+
+// Divides the frame into a 100×100 grid of equal chunks.
+// A chunk is "active" if at least one of its pixels changed beyond the tolerance
+// (and passes watch-area / tray-exclusion filters).
+// sensitivityPct: alarm fires when (active chunks / relevant chunks) * 100 >= this value.
 export function hasSignificantChange(
   prev: Buffer,
   curr: Buffer,
@@ -45,40 +59,59 @@ export function hasSignificantChange(
   trayRegion: Region,
   watchAreas: Region[] = []
 ): ChangeResult {
-  const bytesPerPixel = 4 // BGRA (Electron bitmap format)
-  const tolerance = 30    // per-channel tolerance to ignore compression/rendering noise
+  const bytesPerPixel = 4   // BGRA
+  const tolerance = 30
 
-  let changedPixels = 0
-  let totalPixels = 0
-  let minX = width, minY = height, maxX = 0, maxY = 0
+  const active = new Uint8Array(GRID_COLS * GRID_ROWS)
+  let changedChunks = 0
+  let relevantChunks = 0
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      // Restrict to watch areas when configured.
-      if (watchAreas.length > 0 && !watchAreas.some((wa) => pixelInRegion(x, y, wa))) continue
-      // Exclude tray/taskbar area.
-      if (trayRegion.width > 0 && pixelInRegion(x, y, trayRegion)) continue
+  const chunkW = width  / GRID_COLS
+  const chunkH = height / GRID_ROWS
 
-      totalPixels++
-      const i = (y * width + x) * bytesPerPixel
-      const dr = Math.abs(prev[i]     - curr[i])
-      const dg = Math.abs(prev[i + 1] - curr[i + 1])
-      const db = Math.abs(prev[i + 2] - curr[i + 2])
-      if (dr > tolerance || dg > tolerance || db > tolerance) {
-        changedPixels++
-        if (x < minX) minX = x
-        if (y < minY) minY = y
-        if (x > maxX) maxX = x
-        if (y > maxY) maxY = y
+  for (let gy = 0; gy < GRID_ROWS; gy++) {
+    for (let gx = 0; gx < GRID_COLS; gx++) {
+      const x0 = Math.round(gx * chunkW)
+      const y0 = Math.round(gy * chunkH)
+      const x1 = Math.round((gx + 1) * chunkW)
+      const y1 = Math.round((gy + 1) * chunkH)
+      const cw = x1 - x0
+      const ch = y1 - y0
+
+      // Skip chunk entirely if it falls outside watch areas (when configured).
+      if (watchAreas.length > 0 && !watchAreas.some((wa) => rectsIntersect(x0, y0, cw, ch, wa))) continue
+
+      // Skip chunk entirely if it is fully inside the tray exclusion region.
+      if (trayRegion.width > 0 && rectsIntersect(x0, y0, cw, ch, trayRegion)) continue
+
+      relevantChunks++
+
+      // Scan pixels in this chunk to find any change.
+      outer: for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          if (watchAreas.length > 0 && !watchAreas.some((wa) => pixelInRegion(x, y, wa))) continue
+          if (trayRegion.width > 0 && pixelInRegion(x, y, trayRegion)) continue
+
+          const i = (y * width + x) * bytesPerPixel
+          if (
+            Math.abs(prev[i]     - curr[i])     > tolerance ||
+            Math.abs(prev[i + 1] - curr[i + 1]) > tolerance ||
+            Math.abs(prev[i + 2] - curr[i + 2]) > tolerance
+          ) {
+            active[gy * GRID_COLS + gx] = 1
+            changedChunks++
+            break outer
+          }
+        }
       }
     }
   }
 
-  if (totalPixels === 0) return { changed: false, bbox: null }
+  if (relevantChunks === 0) return { changed: false, grid: null }
 
-  const changed = (changedPixels / totalPixels) * 100 >= sensitivityPct
+  const changed = (changedChunks / relevantChunks) * 100 >= sensitivityPct
   return {
     changed,
-    bbox: changed ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } : null
+    grid: changed ? { cols: GRID_COLS, rows: GRID_ROWS, active } : null
   }
 }

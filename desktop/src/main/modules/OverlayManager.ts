@@ -1,38 +1,55 @@
 import { BrowserWindow, Display } from 'electron'
-import { Region } from './ChangeDetector'
+import { ChunkGrid } from './ChangeDetector'
 
-const BORDER  = 3
-const PADDING = 10
-const OVERLAP_THRESHOLD = 0.9
+// One full-screen overlay window per display.
+// Active chunks (changed pixels) are left transparent; inactive chunks receive a
+// dark 30 % opacity overlay, so only the areas that actually changed remain visible.
 
-const OVERLAY_HTML = encodeURIComponent(`<!DOCTYPE html>
+function makeOverlayHtml(cols: number, rows: number): string {
+  return encodeURIComponent(`<!DOCTYPE html>
 <html>
-<head><style>
+<head>
+<style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; }
-  body { border: ${BORDER}px solid red; }
-</style></head>
-<body></body>
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+  var COLS = ${cols}, ROWS = ${rows};
+  var c = document.getElementById('c');
+  var ctx = c.getContext('2d');
+
+  // Called from main process via executeJavaScript with a plain Array of 0/1 values.
+  window.drawGrid = function(active) {
+    c.width  = window.innerWidth;
+    c.height = window.innerHeight;
+    var cw = c.width  / COLS;
+    var ch = c.height / ROWS;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    for (var i = 0; i < active.length; i++) {
+      if (!active[i]) {
+        var col = i % COLS;
+        var row = Math.floor(i / COLS);
+        ctx.fillRect(
+          Math.floor(col * cw), Math.floor(row * ch),
+          Math.ceil(cw),        Math.ceil(ch)
+        );
+      }
+    }
+  };
+</script>
+</body>
 </html>`)
-
-function intersectionArea(a: Region, b: Region): number {
-  const x1 = Math.max(a.x, b.x)
-  const y1 = Math.max(a.y, b.y)
-  const x2 = Math.min(a.x + a.width,  b.x + b.width)
-  const y2 = Math.min(a.y + a.height, b.y + b.height)
-  if (x2 <= x1 || y2 <= y1) return 0
-  return (x2 - x1) * (y2 - y1)
 }
 
-function isSubsumedBy(newBox: Region, existing: Region): boolean {
-  const area = newBox.width * newBox.height
-  if (area <= 0) return true
-  return intersectionArea(newBox, existing) / area >= OVERLAP_THRESHOLD
-}
-
-function createOverlayWindow(x: number, y: number, w: number, h: number): BrowserWindow {
+function createOverlayWindow(display: Display): BrowserWindow {
+  const { x, y, width, height } = display.bounds
   const win = new BrowserWindow({
-    x, y, width: w, height: h,
+    x, y, width, height,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -47,42 +64,70 @@ function createOverlayWindow(x: number, y: number, w: number, h: number): Browse
   win.setIgnoreMouseEvents(true)
   win.setAlwaysOnTop(true, 'screen-saver')
   win.setContentProtection(true)
-  win.loadURL(`data:text/html;charset=utf-8,${OVERLAY_HTML}`)
   return win
 }
 
+interface Entry {
+  win: BrowserWindow
+  // Cumulative OR of all grids received since alarm started.
+  active: Uint8Array
+  // True once the window has finished loading and drawGrid is callable.
+  ready: boolean
+  // Grid pending draw if the window wasn't ready yet.
+  pendingDraw: boolean
+}
+
 export class OverlayManager {
-  private entries: Array<{ bbox: Region; win: BrowserWindow }> = []
+  private entries = new Map<number, Entry>()
 
-  // bbox is in physical pixel coordinates within the display's captured frame.
-  // display is used to convert to logical screen coordinates for the window.
-  add(bbox: Region, display: Display): void {
-    if (bbox.width <= 0 || bbox.height <= 0) return
+  // grid is in logical chunk coordinates (100 × 100) regardless of scaleFactor.
+  // display is needed to position and size the window.
+  update(grid: ChunkGrid, display: Display): void {
+    let entry = this.entries.get(display.id)
 
-    const sf = display.scaleFactor
+    if (!entry) {
+      const win = createOverlayWindow(display)
+      const active = new Uint8Array(grid.cols * grid.rows)
+      entry = { win, active, ready: false, pendingDraw: false }
+      this.entries.set(display.id, entry)
 
-    // Convert physical frame coords → logical screen coords
-    const logX = display.bounds.x + Math.round((bbox.x - PADDING) / sf)
-    const logY = display.bounds.y + Math.round((bbox.y - PADDING) / sf)
-    const logW = Math.min(Math.round((bbox.width + PADDING * 2) / sf), display.bounds.width)
-    const logH = Math.min(Math.round((bbox.height + PADDING * 2) / sf), display.bounds.height)
+      const html = makeOverlayHtml(grid.cols, grid.rows)
+      win.loadURL(`data:text/html;charset=utf-8,${html}`)
 
-    // Dedup against already-visible boxes (compare in physical space)
-    const duplicate = this.entries.some(
-      (e) => !e.win.isDestroyed() && isSubsumedBy(bbox, e.bbox)
-    )
-    if (duplicate) return
+      win.webContents.once('did-finish-load', () => {
+        const e = this.entries.get(display.id)
+        if (!e || e.win.isDestroyed()) return
+        e.ready = true
+        if (e.pendingDraw) this.redraw(e)
+      })
 
-    const win = createOverlayWindow(logX, logY, logW, logH)
-    const entry = { bbox, win }
-    win.on('closed', () => { this.entries = this.entries.filter((e) => e !== entry) })
-    this.entries.push(entry)
+      win.on('closed', () => this.entries.delete(display.id))
+    }
+
+    // Accumulate: once a chunk is active it stays active until hideAll().
+    for (let i = 0; i < grid.active.length; i++) {
+      if (grid.active[i]) entry.active[i] = 1
+    }
+
+    if (entry.ready) {
+      this.redraw(entry)
+    } else {
+      entry.pendingDraw = true
+    }
   }
 
   hideAll(): void {
-    for (const { win } of this.entries) {
+    for (const { win } of this.entries.values()) {
       if (!win.isDestroyed()) win.close()
     }
-    this.entries = []
+    this.entries.clear()
+  }
+
+  private redraw(entry: Entry): void {
+    if (entry.win.isDestroyed()) return
+    const arr = JSON.stringify(Array.from(entry.active))
+    entry.win.webContents
+      .executeJavaScript(`window.drawGrid && window.drawGrid(${arr})`)
+      .catch(() => { /* window may have been destroyed */ })
   }
 }

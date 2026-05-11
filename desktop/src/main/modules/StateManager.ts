@@ -117,7 +117,7 @@ export class StateManager extends EventEmitter {
       )
 
       if (result.changed) {
-        if (result.bbox) this.overlay.add(result.bbox, frame.display)
+        if (result.grid) this.overlay.update(result.grid, frame.display)
 
         if (this._current !== 'alarm') {
           // Only push on the first change that triggers the alarm;
