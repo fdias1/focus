@@ -21,8 +21,6 @@ jobs:
         include:
           - os: macos-15        # Apple Silicon
             build_args: --mac --arm64
-          - os: macos-13        # Intel Mac
-            build_args: --mac --x64
           - os: windows-latest
             build_args: --win --x64
 
