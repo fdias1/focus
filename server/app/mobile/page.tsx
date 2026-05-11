@@ -22,6 +22,28 @@ interface QRPayload {
   server: string
 }
 
+interface StoredNotification {
+  id: string
+  desktopId: string
+  title: string
+  body: string
+  receivedAt: number
+}
+
+const NOTIF_KEY = 'focus_notifications'
+
+function loadNotifications(): StoredNotification[] {
+  try {
+    return JSON.parse(localStorage.getItem(NOTIF_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveNotifications(list: StoredNotification[]): void {
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(list))
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -58,6 +80,7 @@ export default function MobilePage() {
   const [subscribed, setSubscribed] = useState(false)
   const [pushError, setPushError] = useState('')
   const [subscribing, setSubscribing] = useState(false)
+  const [notifications, setNotifications] = useState<StoredNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [cameraError, setCameraError] = useState('')
 
@@ -75,9 +98,36 @@ export default function MobilePage() {
     const id = getClientId()
     setClientId(id)
 
-    // Register SW
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(console.error)
+    // Load persisted notifications
+    setNotifications(loadNotifications())
+
+    // Register SW and listen for messages from it
+    const swContainer = 'serviceWorker' in navigator
+      ? (navigator as Navigator & { serviceWorker: ServiceWorkerContainer }).serviceWorker
+      : null
+
+    if (swContainer) {
+      swContainer.register('/sw.js').catch(console.error)
+
+      const onMessage = (event: MessageEvent) => {
+        const msg = event.data as { type: string; notification?: StoredNotification; desktopId?: string }
+        if (msg.type === 'alert' && msg.notification) {
+          setNotifications((prev) => {
+            if (prev.some((n) => n.id === msg.notification!.id)) return prev
+            const next = [msg.notification!, ...prev]
+            saveNotifications(next)
+            return next
+          })
+        } else if (msg.type === 'clear') {
+          setNotifications((prev) => {
+            const next = msg.desktopId ? prev.filter((n) => n.desktopId !== msg.desktopId) : []
+            saveNotifications(next)
+            return next
+          })
+        }
+      }
+      swContainer.addEventListener('message', onMessage)
+      return () => swContainer.removeEventListener('message', onMessage)
     }
 
     // Check push support
@@ -394,6 +444,28 @@ export default function MobilePage() {
         onUnsubscribe={unsubscribePush}
       />
 
+      {/* Recent alerts */}
+      {notifications.length > 0 && (
+        <section style={s.section}>
+          <Row>
+            <p style={s.sectionTitle}>Recent Alerts</p>
+            <button style={s.refreshBtn} onClick={() => {
+              saveNotifications([])
+              setNotifications([])
+            }}>✕ Clear</button>
+          </Row>
+          {notifications.map((n) => (
+            <div key={n.id} style={s.alertRow}>
+              <div style={s.alertDot} />
+              <div style={{ flex: 1 }}>
+                <p style={s.alertBody}>{n.body}</p>
+                <p style={s.alertMeta}>{new Date(n.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       {/* Paired desktops */}
       <section style={s.section}>
         <Row>
@@ -627,6 +699,16 @@ const s: Record<string, React.CSSProperties> = {
     border: 'none', borderRadius: 8, padding: '6px 12px',
     fontSize: 13, cursor: 'pointer'
   },
+  alertRow: {
+    display: 'flex', alignItems: 'flex-start', gap: 12,
+    padding: '12px 0', borderBottom: `1px solid ${C.border}`
+  },
+  alertDot: {
+    width: 8, height: 8, borderRadius: '50%',
+    background: C.danger, flexShrink: 0, marginTop: 5
+  },
+  alertBody: { fontSize: 14, margin: 0, color: C.text },
+  alertMeta: { fontSize: 12, color: C.muted, margin: '3px 0 0' },
   empty: { color: C.muted, fontSize: 14, margin: '4px 0 0' },
   card: {
     background: C.surface, borderRadius: 16,

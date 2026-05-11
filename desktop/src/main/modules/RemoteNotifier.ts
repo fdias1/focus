@@ -2,13 +2,13 @@ import { ConfigStore } from './ConfigStore'
 import { SERVER_URL } from './constants'
 
 /**
- * Sends a single push notification to all paired mobile devices
- * for the given bounty box detection event.
- * Fire-and-forget — errors are silently swallowed.
+ * Sends push events to all paired mobile/web clients.
+ * All calls are fire-and-forget — errors are silently swallowed.
  */
 export class RemoteNotifier {
   constructor(private readonly config: ConfigStore) {}
 
+  /** Notify paired devices that a screen change was detected. */
   notify(bountyBoxId: string): void {
     const { desktopId, apiKey } = this.config.getServerCredentials()
     if (!desktopId || !apiKey) return
@@ -17,6 +17,18 @@ export class RemoteNotifier {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ desktopId, apiKey, bountyBoxId })
+    }).catch(() => {})
+  }
+
+  /** Notify paired devices that the user is active again — clears their notification list. */
+  clear(): void {
+    const { desktopId, apiKey } = this.config.getServerCredentials()
+    if (!desktopId || !apiKey) return
+
+    fetch(`${SERVER_URL}/api/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ desktopId, apiKey })
     }).catch(() => {})
   }
 }

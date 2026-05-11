@@ -56,6 +56,28 @@ export class StateManager extends EventEmitter {
     this.transition('off')
   }
 
+  /** Called when config changes while running — hot-applies time-sensitive fields. */
+  applyConfig(partial: Partial<import('../../shared/ipc-types').AppConfig>): void {
+    if (this._current === 'off') return
+
+    if (partial.inactivityThreshold !== undefined) {
+      // Restart inactivity detector with the new threshold.
+      this.inactivity.start(partial.inactivityThreshold)
+    }
+
+    if (partial.snapshotInterval !== undefined) {
+      if (this._current === 'monitoring' || this._current === 'alarm') {
+        this.scanner.start(partial.snapshotInterval)
+      }
+    }
+
+    if (partial.alarmInterval !== undefined && this._current === 'alarm') {
+      // Restart the alarm timer with the new interval.
+      this.alarm.reset()
+      this.alarm.trigger(partial.alarmInterval)
+    }
+  }
+
   private onInactive(): void {
     if (this._current !== 'active') return
     const cfg = this.config.get()
@@ -66,11 +88,16 @@ export class StateManager extends EventEmitter {
 
   private onActive(): void {
     if (this._current === 'off') return
+    const wasAlarming = this._current === 'alarm'
     this.scanner.stop()
     this.alarm.reset()
     this.overlay.hideAll()
     this.prevFrame = null
     this.transition('active')
+    // Clear paired devices' notification lists when the user returns.
+    if (wasAlarming && this.config.get().remoteNotifications) {
+      this.remote.clear()
+    }
   }
 
   private onFrame(frame: Frame): void {

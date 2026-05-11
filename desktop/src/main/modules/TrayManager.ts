@@ -17,7 +17,7 @@ export class TrayManager {
     private readonly state: StateManager,
     private readonly openSettings: () => void
   ) {
-    const icon = this.iconFor('off')
+    const icon = this.iconFor(state.current)
     this.tray = new Tray(icon)
     this.tray.setToolTip('Focus')
     this.buildMenu()

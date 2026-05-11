@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       to: p.pushToken!,
       title: notifTitle,
       body: notifBody(p.pairingNickname),
-      data: { bountyBoxId, desktopId }
+      data: { type: 'alert', bountyBoxId, desktopId }
     }))
   await sendPush(expoMessages)
 
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
       await sendWebPush([sub.subscription], {
         title: notifTitle,
         body: notifBody(clientNickname[sub.clientId] ?? null),
-        data: { bountyBoxId, desktopId }
+        data: { type: 'alert', bountyBoxId, desktopId }
       })
       webPushSent++
     }

@@ -55,7 +55,6 @@ app.whenReady().then(async () => {
   ensureDesktopRegistered(config)
 
   const state = new StateManager(config)
-  state.toggle() // start active on launch
 
   const tray = new TrayManager(state, () => {
     if (configWindow) {
@@ -70,6 +69,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.GET_CONFIG, () => config.get())
   ipcMain.handle(IPC.SET_CONFIG, (_event, partial: Partial<AppConfig>) => {
     config.set(partial)
+    state.applyConfig(partial)
   })
   ipcMain.handle(IPC.START_AREA_SELECTION, async () => {
     configWindow?.hide()
@@ -90,6 +90,9 @@ app.whenReady().then(async () => {
   state.on('screenPermissionDenied', () => {
     configWindow?.webContents.send(IPC.SCREEN_PERMISSION_DENIED)
   })
+
+  // Toggle after listeners are wired so the initial 'active' state propagates to the tray.
+  state.toggle()
 
   app.on('window-all-closed', () => { /* keep running as tray app */ })
   app.on('before-quit', () => {
