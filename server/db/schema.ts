@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, unique } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, uuid, unique, index } from 'drizzle-orm/pg-core'
 
 export const desktopDevices = pgTable('desktop_devices', {
   id: uuid('id').primaryKey(),
@@ -35,6 +35,21 @@ export const pairingTokens = pgTable('pairing_tokens', {
     .references(() => desktopDevices.id, { onDelete: 'cascade' }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull()
 })
+
+// Web Push subscriptions — one per browser/device, owned by a client.
+export const webPushSubscriptions = pgTable(
+  'web_push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clientDevices.id, { onDelete: 'cascade' }),
+    // Full PushSubscription JSON: { endpoint, keys: { p256dh, auth } }
+    subscription: text('subscription').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+  },
+  (t) => [index('web_push_client_idx').on(t.clientId)]
+)
 
 // One row per (bountyBoxId, desktopId) — prevents duplicate push deliveries.
 export const notifications = pgTable(

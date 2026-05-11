@@ -1,8 +1,9 @@
 import { db } from '@/db'
-import { notifications, pairings, clientDevices } from '@/db/schema'
+import { notifications, pairings, clientDevices, webPushSubscriptions } from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
 import { sendPush } from '@/lib/push'
-import { eq } from 'drizzle-orm'
+import { sendWebPush } from '@/lib/webpush'
+import { eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 const Body = z.object({
@@ -24,27 +25,56 @@ export async function POST(req: Request) {
   try {
     await db.insert(notifications).values({ id: bountyBoxId, desktopId })
   } catch {
-    // unique constraint violation → already sent
     return json({ ok: true, skipped: true })
   }
 
-  // Find all paired clients with a push token
+  // Find all paired clients
   const paired = await db
-    .select({ pushToken: clientDevices.pushToken, pairingNickname: pairings.nickname })
+    .select({
+      pushToken: clientDevices.pushToken,
+      clientId: clientDevices.id,
+      pairingNickname: pairings.nickname
+    })
     .from(pairings)
     .innerJoin(clientDevices, eq(pairings.clientId, clientDevices.id))
     .where(eq(pairings.desktopId, desktopId))
 
-  const messages = paired
+  const notifTitle = 'Focus — Change detected'
+  const notifBody = (nickname: string | null) =>
+    nickname ? `On "${nickname}"` : 'A change was detected on your screen.'
+
+  // Expo push (React Native clients)
+  const expoMessages = paired
     .filter((p) => p.pushToken)
     .map((p) => ({
       to: p.pushToken!,
-      title: 'Focus — Change detected',
-      body: p.pairingNickname ? `On "${p.pairingNickname}"` : 'A change was detected on your screen.',
+      title: notifTitle,
+      body: notifBody(p.pairingNickname),
       data: { bountyBoxId, desktopId }
     }))
+  await sendPush(expoMessages)
 
-  await sendPush(messages)
+  // Web push (PWA clients)
+  const clientIds = paired.map((p) => p.clientId)
+  let webPushSent = 0
+  if (clientIds.length > 0) {
+    const webSubs = await db
+      .select({ subscription: webPushSubscriptions.subscription, clientId: webPushSubscriptions.clientId })
+      .from(webPushSubscriptions)
+      .where(inArray(webPushSubscriptions.clientId, clientIds))
 
-  return json({ ok: true, sent: messages.length })
+    // Group by clientId to pick up the right nickname per subscription
+    const clientNickname = Object.fromEntries(paired.map((p) => [p.clientId, p.pairingNickname]))
+
+    for (const sub of webSubs) {
+      await sendWebPush([sub.subscription], {
+        title: notifTitle,
+        body: notifBody(clientNickname[sub.clientId] ?? null),
+        data: { bountyBoxId, desktopId }
+      })
+      webPushSent++
+    }
+  }
+
+  return json({ ok: true, expo: expoMessages.length, web: webPushSent })
 }
