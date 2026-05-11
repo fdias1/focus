@@ -60,8 +60,9 @@ export async function openQRWindow(config: ConfigStore): Promise<PairResult> {
     return { ok: true }
   }
 
-  // If startup registration hasn't finished yet, try again now.
-  if (!config.getServerCredentials().desktopId) {
+  // If startup registration hasn't finished (or failed), complete it now.
+  const creds = config.getServerCredentials()
+  if (!creds.desktopId || !creds.apiKey) {
     await ensureDesktopRegistered(config)
   }
 

@@ -40,14 +40,17 @@ export async function POST(req: Request) {
   const clientIds = paired.map((p) => p.clientId)
   if (clientIds.length > 0) {
     const webSubs = await db
-      .select({ subscription: webPushSubscriptions.subscription })
+      .select({ id: webPushSubscriptions.id, subscription: webPushSubscriptions.subscription })
       .from(webPushSubscriptions)
       .where(inArray(webPushSubscriptions.clientId, clientIds))
 
-    await sendWebPush(
-      webSubs.map((s) => s.subscription),
+    const expired = await sendWebPush(
+      webSubs.map((s) => ({ id: s.id, subscription: s.subscription })),
       { type: 'clear', title: '', body: '', data: { desktopId } }
     )
+    if (expired.length > 0) {
+      await db.delete(webPushSubscriptions).where(inArray(webPushSubscriptions.id, expired))
+    }
   }
 
   return json({ ok: true })

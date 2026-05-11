@@ -106,6 +106,10 @@ export class StateManager extends EventEmitter {
         .filter((wa) => wa.displayId === frame.display.id)
         .map(({ x, y, width, height }) => ({ x, y, width, height }))
 
+      // If watch areas are configured on ANY display, skip displays that have none —
+      // the user explicitly limited monitoring to specific screens.
+      if (cfg.watchAreas.length > 0 && displayWatchAreas.length === 0) return
+
       const result = hasSignificantChange(
         prev.data,
         frame.data,

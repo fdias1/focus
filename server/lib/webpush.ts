@@ -20,20 +20,35 @@ function configure() {
 }
 
 /**
- * Sends a Web Push notification to one or more stored subscription JSON strings.
- * Failures for individual subscriptions are silently dropped (expired/invalid endpoints).
+ * Sends a Web Push notification to the given subscriptions.
+ * Returns the database IDs of subscriptions that are expired/invalid (HTTP 410 or 404)
+ * so the caller can remove them from the database.
  */
 export async function sendWebPush(
-  subscriptionJsons: string[],
+  subscriptions: Array<{ id: string; subscription: string }>,
   payload: WebPushPayload
-): Promise<void> {
-  if (subscriptionJsons.length === 0) return
+): Promise<string[]> {
+  if (subscriptions.length === 0) return []
   configure()
 
-  await Promise.allSettled(
-    subscriptionJsons.map((raw) => {
-      const sub = JSON.parse(raw) as webpush.PushSubscription
-      return webpush.sendNotification(sub, JSON.stringify(payload))
+  const results = await Promise.allSettled(
+    subscriptions.map(async ({ id, subscription }) => {
+      const sub = JSON.parse(subscription) as webpush.PushSubscription
+      try {
+        await webpush.sendNotification(sub, JSON.stringify(payload))
+        return { id, expired: false }
+      } catch (err: unknown) {
+        const status = (err as { statusCode?: number }).statusCode
+        // 410 Gone = subscription explicitly unsubscribed; 404 = endpoint no longer exists.
+        const expired = status === 410 || status === 404
+        return { id, expired }
+      }
     })
   )
+
+  return results
+    .filter((r): r is PromiseFulfilledResult<{ id: string; expired: boolean }> =>
+      r.status === 'fulfilled' && r.value.expired
+    )
+    .map((r) => r.value.id)
 }

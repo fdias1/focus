@@ -21,12 +21,13 @@ export async function POST(req: Request) {
   const desktopId = await validateDesktop(parsed.data)
   if (!desktopId) return err('unauthorized', 401)
 
-  // Dedup: skip if this bounty box was already notified
-  try {
-    await db.insert(notifications).values({ id: bountyBoxId, desktopId })
-  } catch {
-    return json({ ok: true, skipped: true })
-  }
+  // Dedup: skip if this bounty box was already notified (conflict = duplicate).
+  const inserted = await db
+    .insert(notifications)
+    .values({ id: bountyBoxId, desktopId })
+    .onConflictDoNothing()
+    .returning()
+  if (inserted.length === 0) return json({ ok: true, skipped: true })
 
   // Find all paired clients
   const paired = await db
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
   let webPushSent = 0
   if (clientIds.length > 0) {
     const webSubs = await db
-      .select({ subscription: webPushSubscriptions.subscription, clientId: webPushSubscriptions.clientId })
+      .select({ id: webPushSubscriptions.id, subscription: webPushSubscriptions.subscription, clientId: webPushSubscriptions.clientId })
       .from(webPushSubscriptions)
       .where(inArray(webPushSubscriptions.clientId, clientIds))
 
@@ -67,12 +68,15 @@ export async function POST(req: Request) {
     const clientNickname = Object.fromEntries(paired.map((p) => [p.clientId, p.pairingNickname]))
 
     for (const sub of webSubs) {
-      await sendWebPush([sub.subscription], {
+      const expired = await sendWebPush([{ id: sub.id, subscription: sub.subscription }], {
         type: 'alert',
         title: notifTitle,
         body: notifBody(clientNickname[sub.clientId] ?? null),
         data: { bountyBoxId, desktopId }
       })
+      if (expired.length > 0) {
+        await db.delete(webPushSubscriptions).where(inArray(webPushSubscriptions.id, expired))
+      }
       webPushSent++
     }
   }
