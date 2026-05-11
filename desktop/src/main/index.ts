@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, screen } from 'electron'
 import { join } from 'path'
 import { ConfigStore } from './modules/ConfigStore'
 import { StateManager } from './modules/StateManager'
@@ -73,10 +73,19 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle(IPC.START_AREA_SELECTION, async () => {
     configWindow?.hide()
-    const region = await selectArea()
+    const area = await selectArea()
     configWindow?.show()
-    config.set({ watchArea: region })
-    return region
+    if (area) {
+      // Replace any existing watch area for the same display, otherwise append.
+      const existing = config.get().watchAreas.filter((wa) => wa.displayId !== area.displayId)
+      config.set({ watchAreas: [...existing, area] })
+    }
+    return area
+  })
+  ipcMain.handle(IPC.GET_DISPLAYS, () => {
+    const displays = screen.getAllDisplays()
+    const primaryId = screen.getPrimaryDisplay().id
+    return displays.map((d, i) => ({ id: d.id, index: i, primary: d.id === primaryId }))
   })
   ipcMain.handle(IPC.GET_DESKTOP_ID, () => config.getServerCredentials().desktopId)
   ipcMain.handle(IPC.PAIR_DEVICE, async () => openQRWindow(config))

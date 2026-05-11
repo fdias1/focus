@@ -1,45 +1,34 @@
 import { EventEmitter } from 'events'
-import { desktopCapturer, screen, systemPreferences, shell } from 'electron'
+import { desktopCapturer, screen, systemPreferences, shell, Display } from 'electron'
 
 export interface Frame {
   data: Buffer
-  width: number
+  width: number      // physical pixels
   height: number
+  display: Display   // the Electron Display this frame belongs to
 }
 
-/** Returns the current macOS Screen Recording permission status, or 'granted' on other platforms. */
 export function getScreenPermissionStatus(): 'granted' | 'denied' | 'not-determined' {
   if (process.platform !== 'darwin') return 'granted'
   const status = systemPreferences.getMediaAccessStatus('screen')
   if (status === 'granted') return 'granted'
   if (status === 'denied' || status === 'restricted') return 'denied'
-  return 'not-determined' // 'unknown' or 'not-determined'
+  return 'not-determined'
 }
 
-/**
- * Triggers the macOS Screen Recording permission prompt if not yet determined.
- * No-op on Windows/Linux. Opens System Settings if previously denied.
- */
 export async function requestScreenPermission(): Promise<'granted' | 'denied' | 'not-determined'> {
   if (process.platform !== 'darwin') return 'granted'
-
   const status = getScreenPermissionStatus()
-
   if (status === 'granted') return 'granted'
-
   if (status === 'denied') {
-    // macOS doesn't allow re-prompting — send user to System Settings.
     shell.openExternal(
       'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
     )
     return 'denied'
   }
-
-  // 'not-determined': calling getSources() triggers the OS permission dialog.
   try {
     await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
   } catch { /* ignore */ }
-
   return getScreenPermissionStatus()
 }
 
@@ -60,41 +49,51 @@ export class ScreenScanner extends EventEmitter {
   }
 
   private async capture(): Promise<void> {
-    // Check permission before every capture attempt on macOS.
-    if (process.platform === 'darwin') {
-      const status = getScreenPermissionStatus()
-      if (status !== 'granted') {
-        this.emit('permissionDenied', status)
-        return
-      }
+    if (process.platform === 'darwin' && getScreenPermissionStatus() !== 'granted') {
+      this.emit('permissionDenied')
+      return
     }
 
     try {
-      const display = screen.getPrimaryDisplay()
-      const { width, height } = display.bounds
+      const displays = screen.getAllDisplays()
+
+      // Request at the largest display's physical resolution — each source
+      // will be scaled to its natural size within this maximum.
+      const maxW = Math.max(...displays.map((d) => d.bounds.width * d.scaleFactor))
+      const maxH = Math.max(...displays.map((d) => d.bounds.height * d.scaleFactor))
 
       const sources = await desktopCapturer.getSources({
         types: ['screen'],
-        thumbnailSize: { width, height }
+        thumbnailSize: { width: maxW, height: maxH }
       })
 
-      const primary = sources[0]
-      if (!primary) {
-        // Likely permission was just revoked.
-        this.emit('permissionDenied', 'denied')
+      if (sources.length === 0) {
+        this.emit('permissionDenied')
         return
       }
 
-      const image = primary.thumbnail
-      const frame: Frame = {
-        data: image.getBitmap(),
-        width: image.getSize().width,
-        height: image.getSize().height
+      for (const display of displays) {
+        // Match source to display: Electron sets display_id on macOS/Windows.
+        const source =
+          sources.find((s) => s.display_id === String(display.id)) ??
+          sources[displays.indexOf(display)] // fallback: positional match
+
+        if (!source) continue
+
+        const image = source.thumbnail
+        const { width, height } = image.getSize()
+        if (width === 0 || height === 0) continue
+
+        const frame: Frame = {
+          data: image.getBitmap(),
+          width,
+          height,
+          display
+        }
+        this.emit('frame', frame)
       }
-      this.emit('frame', frame)
     } catch (e) {
-      // Capture can fail if permission is revoked mid-session; emit event.
-      this.emit('permissionDenied', 'denied')
+      this.emit('permissionDenied')
     }
   }
 }

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events'
-import { AppState } from '../../shared/ipc-types'
+import { AppConfig, AppState } from '../../shared/ipc-types'
 import { ConfigStore } from './ConfigStore'
 import { WakeLockManager } from './WakeLockManager'
 import { InactivityDetector } from './InactivityDetector'
@@ -13,7 +13,8 @@ export { getScreenPermissionStatus }
 
 export class StateManager extends EventEmitter {
   private _current: AppState = 'off'
-  private prevFrame: Frame | null = null
+  // One previous frame per display — keyed by Display.id
+  private prevFrames = new Map<number, Frame>()
 
   private readonly wake = new WakeLockManager()
   private readonly inactivity = new InactivityDetector()
@@ -31,9 +32,7 @@ export class StateManager extends EventEmitter {
     this.scanner.on('permissionDenied', () => this.emit('screenPermissionDenied'))
   }
 
-  get current(): AppState {
-    return this._current
-  }
+  get current(): AppState { return this._current }
 
   toggle(): void {
     if (this._current === 'off') {
@@ -52,27 +51,22 @@ export class StateManager extends EventEmitter {
     this.scanner.stop()
     this.alarm.reset()
     this.overlay.hideAll()
-    this.prevFrame = null
+    this.prevFrames.clear()
     this.transition('off')
   }
 
-  /** Called when config changes while running — hot-applies time-sensitive fields. */
-  applyConfig(partial: Partial<import('../../shared/ipc-types').AppConfig>): void {
+  /** Hot-applies time-sensitive config fields while running. */
+  applyConfig(partial: Partial<AppConfig>): void {
     if (this._current === 'off') return
-
     if (partial.inactivityThreshold !== undefined) {
-      // Restart inactivity detector with the new threshold.
       this.inactivity.start(partial.inactivityThreshold)
     }
-
     if (partial.snapshotInterval !== undefined) {
       if (this._current === 'monitoring' || this._current === 'alarm') {
         this.scanner.start(partial.snapshotInterval)
       }
     }
-
     if (partial.alarmInterval !== undefined && this._current === 'alarm') {
-      // Restart the alarm timer with the new interval.
       this.alarm.reset()
       this.alarm.trigger(partial.alarmInterval)
     }
@@ -81,7 +75,7 @@ export class StateManager extends EventEmitter {
   private onInactive(): void {
     if (this._current !== 'active') return
     const cfg = this.config.get()
-    this.prevFrame = null
+    this.prevFrames.clear()
     this.scanner.start(cfg.snapshotInterval)
     this.transition('monitoring')
   }
@@ -92,9 +86,8 @@ export class StateManager extends EventEmitter {
     this.scanner.stop()
     this.alarm.reset()
     this.overlay.hideAll()
-    this.prevFrame = null
+    this.prevFrames.clear()
     this.transition('active')
-    // Clear paired devices' notification lists when the user returns.
     if (wasAlarming && this.config.get().remoteNotifications) {
       this.remote.clear()
     }
@@ -103,25 +96,29 @@ export class StateManager extends EventEmitter {
   private onFrame(frame: Frame): void {
     if (this._current !== 'monitoring' && this._current !== 'alarm') return
 
-    if (this.prevFrame) {
+    const prev = this.prevFrames.get(frame.display.id)
+    if (prev) {
       const cfg = this.config.get()
-
       this.alarm.setLocalEnabled(cfg.localNotifications)
 
+      // Filter watch areas to those configured for this specific display.
+      const displayWatchAreas = cfg.watchAreas
+        .filter((wa) => wa.displayId === frame.display.id)
+        .map(({ x, y, width, height }) => ({ x, y, width, height }))
+
       const result = hasSignificantChange(
-        this.prevFrame.data,
+        prev.data,
         frame.data,
         frame.width,
         frame.height,
         cfg.changeSensitivity,
-        getTrayExclusionRegion(),
-        cfg.watchArea
+        getTrayExclusionRegion(frame.display),
+        displayWatchAreas
       )
 
       if (result.changed) {
-        if (result.bbox) this.overlay.add([result.bbox])
+        if (result.bbox) this.overlay.add(result.bbox, frame.display)
 
-        // Remote notification fires once per detection event, not per alarm tick.
         if (cfg.remoteNotifications) {
           this.remote.notify(crypto.randomUUID())
         }
@@ -133,7 +130,7 @@ export class StateManager extends EventEmitter {
       }
     }
 
-    this.prevFrame = frame
+    this.prevFrames.set(frame.display.id, frame)
   }
 
   private transition(next: AppState): void {

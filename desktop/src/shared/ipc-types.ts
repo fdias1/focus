@@ -7,12 +7,20 @@ export interface Region {
   height: number
 }
 
+export interface WatchArea {
+  displayId: number  // matches Electron Display.id
+  x: number          // physical pixels within the display's captured frame
+  y: number
+  width: number
+  height: number
+}
+
 export interface AppConfig {
   inactivityThreshold: number  // seconds, default 30
   snapshotInterval: number     // seconds, default 5
   changeSensitivity: number    // percentage 0.01–1, default 0.1
   alarmInterval: number        // seconds, default 60
-  watchArea: Region | null     // null = monitor full screen
+  watchAreas: WatchArea[]      // empty = monitor all displays at full
   localNotifications: boolean  // OS sound alarm, default true
   remoteNotifications: boolean // push to paired mobiles, default false
 }
@@ -28,7 +36,8 @@ export const IPC = {
   GET_DESKTOP_ID: 'focus:get-desktop-id',
   GET_SCREEN_PERMISSION: 'focus:get-screen-permission',
   OPEN_SCREEN_SETTINGS: 'focus:open-screen-settings',
-  SCREEN_PERMISSION_DENIED: 'focus:screen-permission-denied'
+  SCREEN_PERMISSION_DENIED: 'focus:screen-permission-denied',
+  GET_DISPLAYS: 'focus:get-displays'
 } as const
 
 export interface PairResult {

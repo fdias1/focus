@@ -1,9 +1,9 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, Display } from 'electron'
 import { Region } from './ChangeDetector'
 
-const BORDER  = 3   // red border thickness in px
-const PADDING = 10  // extra space around the tight bounding box in px
-const OVERLAP_THRESHOLD = 0.9 // ignore new box if ≥90% of its area is inside an existing box
+const BORDER  = 3
+const PADDING = 10
+const OVERLAP_THRESHOLD = 0.9
 
 const OVERLAY_HTML = encodeURIComponent(`<!DOCTYPE html>
 <html>
@@ -24,16 +24,15 @@ function intersectionArea(a: Region, b: Region): number {
   return (x2 - x1) * (y2 - y1)
 }
 
-// Returns true if ≥ threshold of newBox's area is covered by existing.
-function isSubsumedBy(newBox: Region, existing: Region, threshold = OVERLAP_THRESHOLD): boolean {
+function isSubsumedBy(newBox: Region, existing: Region): boolean {
   const area = newBox.width * newBox.height
   if (area <= 0) return true
-  return intersectionArea(newBox, existing) / area >= threshold
+  return intersectionArea(newBox, existing) / area >= OVERLAP_THRESHOLD
 }
 
-function createOverlayWindow(x: number, y: number, width: number, height: number): BrowserWindow {
+function createOverlayWindow(x: number, y: number, w: number, h: number): BrowserWindow {
   const win = new BrowserWindow({
-    x, y, width, height,
+    x, y, width: w, height: h,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -47,8 +46,6 @@ function createOverlayWindow(x: number, y: number, width: number, height: number
   })
   win.setIgnoreMouseEvents(true)
   win.setAlwaysOnTop(true, 'screen-saver')
-  // Exclude from desktopCapturer so the red border never appears in
-  // screen snapshots and cannot cause false-positive detections.
   win.setContentProtection(true)
   win.loadURL(`data:text/html;charset=utf-8,${OVERLAY_HTML}`)
   return win
@@ -57,32 +54,29 @@ function createOverlayWindow(x: number, y: number, width: number, height: number
 export class OverlayManager {
   private entries: Array<{ bbox: Region; win: BrowserWindow }> = []
 
-  // Add boxes for newly detected regions. Any region whose area is ≥90%
-  // covered by an already-visible box is silently dropped.
-  add(regions: Region[]): void {
-    const display = screen.getPrimaryDisplay()
-    const { x: screenX, y: screenY } = display.bounds
+  // bbox is in physical pixel coordinates within the display's captured frame.
+  // display is used to convert to logical screen coordinates for the window.
+  add(bbox: Region, display: Display): void {
+    if (bbox.width <= 0 || bbox.height <= 0) return
 
-    for (const bbox of regions) {
-      if (bbox.width <= 0 || bbox.height <= 0) continue
+    const sf = display.scaleFactor
 
-      const duplicate = this.entries.some(
-        e => !e.win.isDestroyed() && isSubsumedBy(bbox, e.bbox)
-      )
-      if (duplicate) continue
+    // Convert physical frame coords → logical screen coords
+    const logX = display.bounds.x + Math.round((bbox.x - PADDING) / sf)
+    const logY = display.bounds.y + Math.round((bbox.y - PADDING) / sf)
+    const logW = Math.min(Math.round((bbox.width + PADDING * 2) / sf), display.bounds.width)
+    const logH = Math.min(Math.round((bbox.height + PADDING * 2) / sf), display.bounds.height)
 
-      const x      = screenX + Math.max(0, bbox.x - PADDING)
-      const y      = screenY + Math.max(0, bbox.y - PADDING)
-      const width  = Math.min(bbox.width  + PADDING * 2, display.bounds.width)
-      const height = Math.min(bbox.height + PADDING * 2, display.bounds.height)
+    // Dedup against already-visible boxes (compare in physical space)
+    const duplicate = this.entries.some(
+      (e) => !e.win.isDestroyed() && isSubsumedBy(bbox, e.bbox)
+    )
+    if (duplicate) return
 
-      const win = createOverlayWindow(x, y, width, height)
-      const entry = { bbox, win }
-      win.on('closed', () => {
-        this.entries = this.entries.filter(e => e !== entry)
-      })
-      this.entries.push(entry)
-    }
+    const win = createOverlayWindow(logX, logY, logW, logH)
+    const entry = { bbox, win }
+    win.on('closed', () => { this.entries = this.entries.filter((e) => e !== entry) })
+    this.entries.push(entry)
   }
 
   hideAll(): void {

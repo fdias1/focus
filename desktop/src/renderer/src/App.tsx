@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AppConfig, AppState, PairResult, Region } from '../../shared/ipc-types'
+import { AppConfig, AppState, PairResult, WatchArea } from '../../shared/ipc-types'
 
 const STATE_LABEL: Record<AppState, string> = {
   off: 'Off',
@@ -15,6 +15,12 @@ const STATE_COLOR: Record<AppState, string> = {
   alarm: '#ef4444'
 }
 
+interface DisplayInfo {
+  id: number
+  index: number
+  primary: boolean
+}
+
 declare global {
   interface Window {
     focusApp: {
@@ -22,7 +28,8 @@ declare global {
       toggle: () => Promise<void>
       getConfig: () => Promise<AppConfig>
       setConfig: (partial: Partial<AppConfig>) => Promise<void>
-      startAreaSelection: () => Promise<Region | null>
+      startAreaSelection: () => Promise<WatchArea | null>
+      getDisplays: () => Promise<DisplayInfo[]>
       getDesktopId: () => Promise<string | null>
       pairDevice: () => Promise<PairResult>
       getScreenPermission: () => Promise<'granted' | 'denied' | 'not-determined'>
@@ -40,10 +47,11 @@ export default function App() {
     snapshotInterval: 5,
     changeSensitivity: 0.1,
     alarmInterval: 60,
-    watchArea: null,
+    watchAreas: [],
     localNotifications: true,
     remoteNotifications: false
   })
+  const [displays, setDisplays] = useState<DisplayInfo[]>([])
   const [selecting, setSelecting] = useState(false)
   const [desktopId, setDesktopId] = useState<string | null>(null)
   const [pairError, setPairError] = useState('')
@@ -53,6 +61,7 @@ export default function App() {
   useEffect(() => {
     window.focusApp.getState().then(setState)
     window.focusApp.getConfig().then(setConfig)
+    window.focusApp.getDisplays().then(setDisplays)
     window.focusApp.getDesktopId().then(setDesktopId)
     window.focusApp.getScreenPermission().then(setScreenPermission)
     const unsubState = window.focusApp.onStateChanged(setState)
@@ -69,31 +78,39 @@ export default function App() {
     window.focusApp.setConfig(partial)
   }
 
-  async function handleWatchAreaToggle(checked: boolean) {
-    if (!checked) {
-      updateConfig({ watchArea: null })
-      return
-    }
-    // Start selection; config window hides while user draws
+  function displayLabel(d: DisplayInfo): string {
+    const name = displays.length > 1 ? `Display ${d.index + 1}` : 'Display'
+    return d.primary ? `${name} (primary)` : name
+  }
+
+  function displayLabelById(displayId: number): string {
+    const d = displays.find((x) => x.id === displayId)
+    if (!d) return `Display ${displayId}`
+    return displayLabel(d)
+  }
+
+  async function handleAddWatchArea() {
     setSelecting(true)
-    const region = await window.focusApp.startAreaSelection()
+    const area = await window.focusApp.startAreaSelection()
     setSelecting(false)
-    if (region) {
-      setConfig((prev) => ({ ...prev, watchArea: region }))
-      // config is already saved in main; just sync local state
+    if (area) {
+      // main process already saved; sync local state
+      const existing = config.watchAreas.filter((wa) => wa.displayId !== area.displayId)
+      setConfig((prev) => ({ ...prev, watchAreas: [...existing, area] }))
     }
   }
 
-  async function handleEditWatchArea() {
-    setSelecting(true)
-    const region = await window.focusApp.startAreaSelection()
-    setSelecting(false)
-    if (region) {
-      setConfig((prev) => ({ ...prev, watchArea: region }))
-    }
+  function handleRemoveWatchArea(displayId: number) {
+    const next = config.watchAreas.filter((wa) => wa.displayId !== displayId)
+    updateConfig({ watchAreas: next })
   }
 
-  const watchAreaSet = config.watchArea !== null
+  // Sorted by display index for stable list order
+  const sortedAreas = [...config.watchAreas].sort((a, b) => {
+    const ia = displays.find((d) => d.id === a.displayId)?.index ?? 99
+    const ib = displays.find((d) => d.id === b.displayId)?.index ?? 99
+    return ia - ib
+  })
 
   return (
     <div style={styles.container}>
@@ -196,33 +213,49 @@ export default function App() {
           <p style={styles.errorMsg}>{pairError}</p>
         )}
 
-        {/* Watch area */}
+        {/* Watch areas */}
         <div style={styles.sectionHeader}>Monitoring</div>
-        <div style={styles.row}>
-          <div style={styles.watchAreaRow}>
-            <label style={styles.checkboxLabel}>
-              <input
-                type="checkbox"
-                checked={watchAreaSet}
-                disabled={selecting}
-                onChange={(e) => handleWatchAreaToggle(e.target.checked)}
-                style={styles.checkbox}
-              />
-              <span style={styles.label}>Watch area</span>
-            </label>
-            {watchAreaSet && !selecting && (
-              <button style={styles.editBtn} onClick={handleEditWatchArea}>
-                Edit
-              </button>
-            )}
-            {selecting && (
-              <span style={styles.selectingHint}>selecting…</span>
-            )}
+
+        {sortedAreas.length > 0 && (
+          <div style={styles.watchAreaList}>
+            {sortedAreas.map((wa) => (
+              <div key={wa.displayId} style={styles.watchAreaItem}>
+                <div style={styles.watchAreaItemLeft}>
+                  <span style={styles.watchAreaName}>{displayLabelById(wa.displayId)}</span>
+                  <span style={styles.watchAreaDims}>
+                    {wa.width} × {wa.height} px
+                  </span>
+                </div>
+                <div style={styles.watchAreaItemRight}>
+                  <button
+                    style={styles.editBtn}
+                    disabled={selecting}
+                    onClick={handleAddWatchArea}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    style={{ ...styles.editBtn, ...styles.removeBtn }}
+                    onClick={() => handleRemoveWatchArea(wa.displayId)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
-          {watchAreaSet && config.watchArea && (
-            <span style={styles.watchAreaInfo}>
-              {config.watchArea.width} × {config.watchArea.height} px at ({config.watchArea.x}, {config.watchArea.y})
-            </span>
+        )}
+
+        <div style={styles.addAreaRow}>
+          {selecting ? (
+            <span style={styles.selectingHint}>Click and drag on any display…</span>
+          ) : (
+            <button style={styles.addAreaBtn} onClick={handleAddWatchArea}>
+              + Add Watch Area
+            </button>
+          )}
+          {sortedAreas.length === 0 && !selecting && (
+            <span style={styles.watchAreaHint}>All displays monitored (no restriction)</span>
           )}
         </div>
       </div>
@@ -370,11 +403,6 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.06em',
     marginTop: '4px'
   },
-  watchAreaRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
   checkboxLabel: {
     display: 'flex',
     alignItems: 'center',
@@ -396,15 +424,67 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#374151',
     cursor: 'pointer'
   },
+  removeBtn: {
+    color: '#ef4444',
+    borderColor: '#fca5a5',
+    background: '#fff5f5'
+  },
   selectingHint: {
     fontSize: '12px',
     color: '#6b7280',
     fontStyle: 'italic'
   },
-  watchAreaInfo: {
+  watchAreaList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px'
+  },
+  watchAreaItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '7px 10px',
+    borderRadius: '7px',
+    border: '1px solid #e5e7eb',
+    background: '#f9fafb'
+  },
+  watchAreaItemLeft: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px'
+  },
+  watchAreaItemRight: {
+    display: 'flex',
+    gap: '6px'
+  },
+  watchAreaName: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#374151'
+  },
+  watchAreaDims: {
     fontSize: '11px',
-    color: '#9ca3af',
-    paddingLeft: '21px'
+    color: '#9ca3af'
+  },
+  addAreaRow: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px'
+  },
+  addAreaBtn: {
+    alignSelf: 'flex-start',
+    fontSize: '12px',
+    fontWeight: 600,
+    padding: '5px 12px',
+    borderRadius: '6px',
+    border: '1px solid #3b82f6',
+    background: '#eff6ff',
+    color: '#2563eb',
+    cursor: 'pointer'
+  },
+  watchAreaHint: {
+    fontSize: '11px',
+    color: '#9ca3af'
   },
   errorMsg: {
     fontSize: '12px',

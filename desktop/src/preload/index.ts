@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, AppConfig, AppState, PairResult, Region } from '../shared/ipc-types'
+import { IPC, AppConfig, AppState, PairResult, WatchArea } from '../shared/ipc-types'
+
+export interface DisplayInfo {
+  id: number
+  index: number
+  primary: boolean
+}
 
 contextBridge.exposeInMainWorld('focusApp', {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC.GET_STATE),
@@ -7,8 +13,10 @@ contextBridge.exposeInMainWorld('focusApp', {
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke(IPC.GET_CONFIG),
   setConfig: (config: Partial<AppConfig>): Promise<void> =>
     ipcRenderer.invoke(IPC.SET_CONFIG, config),
-  startAreaSelection: (): Promise<Region | null> =>
+  startAreaSelection: (): Promise<WatchArea | null> =>
     ipcRenderer.invoke(IPC.START_AREA_SELECTION),
+  getDisplays: (): Promise<DisplayInfo[]> =>
+    ipcRenderer.invoke(IPC.GET_DISPLAYS),
   getDesktopId: (): Promise<string | null> =>
     ipcRenderer.invoke(IPC.GET_DESKTOP_ID),
   pairDevice: (): Promise<PairResult> =>

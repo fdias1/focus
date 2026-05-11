@@ -1,5 +1,5 @@
 import Store from 'electron-store'
-import { AppConfig, Region } from '../../shared/ipc-types'
+import { AppConfig, WatchArea } from '../../shared/ipc-types'
 
 type NumericKey = 'inactivityThreshold' | 'snapshotInterval' | 'changeSensitivity' | 'alarmInterval'
 type BooleanKey = 'localNotifications' | 'remoteNotifications'
@@ -32,7 +32,7 @@ const NUMERIC_KEYS: NumericKey[] = [
 const BOOLEAN_KEYS: BooleanKey[] = ['localNotifications', 'remoteNotifications']
 
 interface StoreSchema extends Record<NumericKey, number>, Record<BooleanKey, boolean> {
-  watchArea: Region | null
+  watchAreas: WatchArea[]
   // Server credentials — never exposed via IPC to the renderer.
   desktopId: string | null
   apiKey: string | null
@@ -46,7 +46,7 @@ export class ConfigStore {
       defaults: {
         ...NUMERIC_DEFAULTS,
         ...BOOLEAN_DEFAULTS,
-        watchArea: null,
+        watchAreas: [],
         desktopId: null,
         apiKey: null
       }
@@ -59,7 +59,7 @@ export class ConfigStore {
       snapshotInterval: this.clamp('snapshotInterval', this.store.get('snapshotInterval')),
       changeSensitivity: this.clamp('changeSensitivity', this.store.get('changeSensitivity')),
       alarmInterval: this.clamp('alarmInterval', this.store.get('alarmInterval')),
-      watchArea: (this.store.get('watchArea') as Region | null) ?? null,
+      watchAreas: (this.store.get('watchAreas') as WatchArea[]) ?? [],
       localNotifications: this.store.get('localNotifications'),
       remoteNotifications: this.store.get('remoteNotifications')
     }
@@ -76,8 +76,8 @@ export class ConfigStore {
         this.store.set(key, partial[key] as boolean)
       }
     }
-    if ('watchArea' in partial) {
-      this.store.set('watchArea', partial.watchArea ?? null)
+    if ('watchAreas' in partial) {
+      this.store.set('watchAreas', partial.watchAreas ?? [])
     }
   }
 
