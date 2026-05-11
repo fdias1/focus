@@ -26,9 +26,13 @@ export async function POST(req: Request) {
     .innerJoin(clientDevices, eq(pairings.clientId, clientDevices.id))
     .where(eq(pairings.desktopId, desktopId))
 
+  // Use the pairing's nickname when set; otherwise fall back to a short
+  // desktop identifier so the user can still tell which desktop fired the
+  // alarm. Same convention used in the PWA pairing list.
+  const desktopLabel = `Desktop ${desktopId.slice(0, 8)}`
   const notifTitle = 'Focus — Change detected'
   const notifBody = (nickname: string | null) =>
-    nickname ? `On "${nickname}"` : 'A change was detected on your screen.'
+    `On ${nickname ? `"${nickname}"` : desktopLabel}`
 
   const clientIds = paired.map((p) => p.clientId)
   if (clientIds.length === 0) return json({ ok: true, web: 0 })
