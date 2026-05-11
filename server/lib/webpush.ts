@@ -1,15 +1,21 @@
 import webpush from 'web-push'
 
-webpush.setVapidDetails(
-  `mailto:${process.env.VAPID_EMAIL ?? 'focus@example.com'}`,
-  process.env.VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-)
-
 export interface WebPushPayload {
   title: string
   body: string
   data?: Record<string, unknown>
+}
+
+let configured = false
+
+function configure() {
+  if (configured) return
+  webpush.setVapidDetails(
+    `mailto:${process.env.VAPID_EMAIL ?? 'focus@example.com'}`,
+    process.env.VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  )
+  configured = true
 }
 
 /**
@@ -21,6 +27,7 @@ export async function sendWebPush(
   payload: WebPushPayload
 ): Promise<void> {
   if (subscriptionJsons.length === 0) return
+  configure()
 
   await Promise.allSettled(
     subscriptionJsons.map((raw) => {
