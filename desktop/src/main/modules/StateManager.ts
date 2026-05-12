@@ -81,6 +81,7 @@ export class StateManager extends EventEmitter {
     this.prevFrames.clear()
     this.scanner.start(cfg.snapshotInterval)
     this.transition('monitoring')
+    this.inactivity.armForFreshInput()
   }
 
   /** Hot-applies time-sensitive config fields while running. */

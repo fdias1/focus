@@ -93,6 +93,7 @@ export class InactivityDetector extends EventEmitter {
   private lastPos = { x: -1, y: -1 }
   private lastMoveAt = Date.now()
   private inactive = false
+  private armedAt: number | null = null
   private readonly pollMs = 1000
   private readonly winQuery = process.platform === 'win32' ? new WindowsIdleQuery() : null
   private polling = false
@@ -101,6 +102,7 @@ export class InactivityDetector extends EventEmitter {
     this.stop()
     this.lastMoveAt = Date.now()
     this.inactive = false
+    this.armedAt = null
     this.timer = setInterval(() => this.poll(thresholdSeconds), this.pollMs)
   }
 
@@ -110,10 +112,21 @@ export class InactivityDetector extends EventEmitter {
       this.timer = null
     }
     this.winQuery?.stop()
+    this.armedAt = null
     if (this.inactive) {
       this.inactive = false
       this.emit('active')
     }
+  }
+
+  // Arm the detector so the next fresh input event (after now) fires 'active'.
+  // Used when StateManager forces MONITORING while the user is still active —
+  // without this, no inactive→active transition would ever occur.
+  armForFreshInput(): void {
+    this.inactive = true
+    this.armedAt = Date.now()
+    const { screen } = require('electron') as typeof import('electron')
+    this.lastPos = screen.getCursorScreenPoint()
   }
 
   private async poll(thresholdSeconds: number): Promise<void> {
@@ -130,7 +143,15 @@ export class InactivityDetector extends EventEmitter {
       if (idleSeconds !== null) {
         const isIdle = idleSeconds >= thresholdSeconds
         if (!isIdle && this.inactive) {
+          if (this.armedAt !== null) {
+            // idleSeconds = seconds since last input. The last input happened at
+            // ~(now - idleSeconds*1000). Require it to be after armedAt, otherwise
+            // the click that triggered the force would itself exit MONITORING.
+            const lastInputAt = Date.now() - idleSeconds * 1000
+            if (lastInputAt <= this.armedAt) return
+          }
           this.inactive = false
+          this.armedAt = null
           this.emit('active')
         } else if (isIdle && !this.inactive) {
           this.inactive = true
@@ -148,6 +169,7 @@ export class InactivityDetector extends EventEmitter {
         this.lastMoveAt = Date.now()
         if (this.inactive) {
           this.inactive = false
+          this.armedAt = null
           this.emit('active')
         }
       } else if (!this.inactive && Date.now() - this.lastMoveAt >= thresholdSeconds * 1000) {
