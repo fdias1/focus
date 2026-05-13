@@ -1,12 +1,35 @@
 import { db } from '@/db'
 import { desktopDevices, pairingTokens, telegramChats, telegramPairings } from '@/db/schema'
-import { and, eq, gt, inArray, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray } from 'drizzle-orm'
 import { escapeMarkdownV2 } from './telegram'
-
-const ID8_RE = /^[0-9a-f]{8}$/i
 
 function fmtId(id: string): string {
   return id.slice(0, 8)
+}
+
+/**
+ * Returns the desktopId at 1-indexed position from the ordered pairing list,
+ * or an error string if the position is out of range or invalid.
+ */
+async function resolvePosition(
+  chatId: number,
+  posArg: string | undefined
+): Promise<{ desktopId: string; nickname: string | null } | { error: string }> {
+  const pos = posArg !== undefined ? parseInt(posArg, 10) : NaN
+  if (isNaN(pos) || pos < 1) {
+    return { error: '✗ Provide a position number from /list \\(e\\.g\\. `1`\\)\\.' }
+  }
+  const rows = await db
+    .select({ desktopId: telegramPairings.desktopId, nickname: telegramPairings.nickname })
+    .from(telegramPairings)
+    .where(eq(telegramPairings.chatId, chatId))
+    .orderBy(telegramPairings.createdAt)
+  if (pos > rows.length) {
+    return {
+      error: `✗ No desktop at position ${pos}\\. Use /list to see your paired desktops\\.`
+    }
+  }
+  return rows[pos - 1]
 }
 
 export function startReply(): string {
@@ -26,14 +49,29 @@ export function helpReply(): string {
     '*Commands*',
     '',
     '`/pair <code> [nickname]` — pair this chat with a desktop',
-    '`/unpair <id>` — remove a pairing \\(id from /list\\)',
+    '`/unpair <number>` — remove a pairing \\(number from /list\\)',
+    '`/rename <number> [nickname]` — set or clear a desktop nickname',
     '`/list` — show all paired desktops',
-    '`/monitor` — start monitoring on all paired desktops',
+    '`/monitor [number]` — start monitoring on all or one desktop',
+    '`/release [number]` — deactivate Focus on all or one desktop',
     '`/help` — show this message'
   ].join('\n')
 }
 
-export async function handleMonitor(chatId: number): Promise<string> {
+export async function handleMonitor(chatId: number, posArg?: string): Promise<string> {
+  if (posArg !== undefined) {
+    const result = await resolvePosition(chatId, posArg)
+    if ('error' in result) return result.error
+    await db
+      .update(desktopDevices)
+      .set({ pendingMonitorAt: new Date() })
+      .where(eq(desktopDevices.id, result.desktopId))
+    const label = result.nickname
+      ? `*${escapeMarkdownV2(result.nickname)}*`
+      : `\`${fmtId(result.desktopId)}\``
+    return `✓ Triggered monitoring on ${label}\\.`
+  }
+
   const paired = await db
     .select({ desktopId: telegramPairings.desktopId })
     .from(telegramPairings)
@@ -48,6 +86,36 @@ export async function handleMonitor(chatId: number): Promise<string> {
     .where(inArray(desktopDevices.id, ids))
 
   return `✓ Triggered monitoring on ${ids.length} desktop\\(s\\)\\.`
+}
+
+export async function handleRelease(chatId: number, posArg?: string): Promise<string> {
+  if (posArg !== undefined) {
+    const result = await resolvePosition(chatId, posArg)
+    if ('error' in result) return result.error
+    await db
+      .update(desktopDevices)
+      .set({ pendingReleaseAt: new Date() })
+      .where(eq(desktopDevices.id, result.desktopId))
+    const label = result.nickname
+      ? `*${escapeMarkdownV2(result.nickname)}*`
+      : `\`${fmtId(result.desktopId)}\``
+    return `✓ Release triggered on ${label}\\.`
+  }
+
+  const paired = await db
+    .select({ desktopId: telegramPairings.desktopId })
+    .from(telegramPairings)
+    .where(eq(telegramPairings.chatId, chatId))
+
+  if (paired.length === 0) return 'No paired desktops\\. Use `/pair <code>` first\\.'
+
+  const ids = paired.map((p) => p.desktopId)
+  await db
+    .update(desktopDevices)
+    .set({ pendingReleaseAt: new Date() })
+    .where(inArray(desktopDevices.id, ids))
+
+  return `✓ Release triggered on ${ids.length} desktop\\(s\\)\\.`
 }
 
 export async function handlePair(
@@ -89,35 +157,50 @@ export async function handlePair(
     return `ℹ Already paired with Desktop \`${id8}\`\\.`
   }
   if (nickname) {
-    return `✓ Paired with Desktop \`${id8}\` \\(as *${escapeMarkdownV2(nickname)}*\\)\\. Use \`/unpair ${id8}\` to remove\\.`
+    return `✓ Paired with Desktop \`${id8}\` \\(as *${escapeMarkdownV2(nickname)}*\\)\\. Use /list to manage pairings\\.`
   }
-  return `✓ Paired with Desktop \`${id8}\`\\. Use \`/unpair ${id8}\` to remove\\.`
+  return `✓ Paired with Desktop \`${id8}\`\\. Use /list to manage pairings\\.`
 }
 
-export async function handleUnpair(
-  chatId: number,
-  idArg: string | undefined
-): Promise<string> {
-  if (!idArg) return 'Usage: `/unpair <id>` \\(id is shown by /list\\)\\.'
-  if (!ID8_RE.test(idArg)) {
-    return '✗ Invalid id\\. Expected an 8\\-character hex identifier from /list\\.'
-  }
-  const id8 = idArg.toLowerCase()
+export async function handleUnpair(chatId: number, posArg: string | undefined): Promise<string> {
+  if (!posArg) return 'Usage: `/unpair <number>` \\(number is shown by /list\\)\\.'
 
-  const deleted = await db
+  const result = await resolvePosition(chatId, posArg)
+  if ('error' in result) return result.error
+
+  const { desktopId, nickname } = result
+  await db
     .delete(telegramPairings)
-    .where(
-      and(
-        eq(telegramPairings.chatId, chatId),
-        sql`substr(${telegramPairings.desktopId}::text, 1, 8) = ${id8}`
-      )
-    )
-    .returning()
+    .where(and(eq(telegramPairings.chatId, chatId), eq(telegramPairings.desktopId, desktopId)))
 
-  if (deleted.length === 0) {
-    return `ℹ No pairing found with id \`${id8}\`\\. Use /list to see your paired desktops\\.`
+  const id8 = fmtId(desktopId)
+  const label = nickname ? ` \\(*${escapeMarkdownV2(nickname)}*\\)` : ''
+  return `✓ Unpaired Desktop \`${id8}\`${label}\\.`
+}
+
+export async function handleRename(
+  chatId: number,
+  posArg: string | undefined,
+  newNickname: string
+): Promise<string> {
+  if (!posArg) return 'Usage: `/rename <number> [nickname]`'
+
+  const result = await resolvePosition(chatId, posArg)
+  if ('error' in result) return result.error
+
+  const { desktopId } = result
+  const nickname = newNickname.trim().slice(0, 64) || null
+
+  await db
+    .update(telegramPairings)
+    .set({ nickname })
+    .where(and(eq(telegramPairings.chatId, chatId), eq(telegramPairings.desktopId, desktopId)))
+
+  const id8 = fmtId(desktopId)
+  if (nickname) {
+    return `✓ Desktop \`${id8}\` renamed to *${escapeMarkdownV2(nickname)}*\\.`
   }
-  return `✓ Unpaired from Desktop \`${id8}\`\\.`
+  return `✓ Nickname cleared for Desktop \`${id8}\`\\.`
 }
 
 export async function handleList(chatId: number): Promise<string> {

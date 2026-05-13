@@ -3,6 +3,8 @@ import {
   handleList,
   handleMonitor,
   handlePair,
+  handleRelease,
+  handleRename,
   handleUnpair,
   helpReply,
   startReply
@@ -61,11 +63,17 @@ export async function POST(req: Request): Promise<Response> {
       case '/unpair':
         reply = await handleUnpair(chatId, args[0])
         break
+      case '/rename':
+        reply = await handleRename(chatId, args[0], args.slice(1).join(' '))
+        break
       case '/list':
         reply = await handleList(chatId)
         break
       case '/monitor':
-        reply = await handleMonitor(chatId)
+        reply = await handleMonitor(chatId, args[0])
+        break
+      case '/release':
+        reply = await handleRelease(chatId, args[0])
         break
       default:
         reply = 'Unknown command\\. Try /help\\.'

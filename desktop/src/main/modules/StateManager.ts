@@ -40,6 +40,7 @@ export class StateManager extends EventEmitter {
     this.scanner.on('frame', (frame: Frame) => this.onFrame(frame))
     this.scanner.on('permissionDenied', () => this.emit('screenPermissionDenied'))
     this.poller.on('startMonitoring', () => this.forceMonitoring())
+    this.poller.on('stopMonitoring', () => this.stop())
   }
 
   get current(): AppState { return this._current }

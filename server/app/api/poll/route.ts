@@ -19,11 +19,18 @@ export async function POST(req: Request) {
   // Atomic consume: clear pending_monitor_at and report whether it was set.
   // Same UPDATE+RETURNING pattern used elsewhere to avoid double-consume
   // when two pollers race (e.g. retry after a timeout).
-  const cleared = await db
-    .update(desktopDevices)
-    .set({ pendingMonitorAt: null })
-    .where(and(eq(desktopDevices.id, desktopId), isNotNull(desktopDevices.pendingMonitorAt)))
-    .returning({ id: desktopDevices.id })
+  const [monCleared, relCleared] = await Promise.all([
+    db
+      .update(desktopDevices)
+      .set({ pendingMonitorAt: null })
+      .where(and(eq(desktopDevices.id, desktopId), isNotNull(desktopDevices.pendingMonitorAt)))
+      .returning({ id: desktopDevices.id }),
+    db
+      .update(desktopDevices)
+      .set({ pendingReleaseAt: null })
+      .where(and(eq(desktopDevices.id, desktopId), isNotNull(desktopDevices.pendingReleaseAt)))
+      .returning({ id: desktopDevices.id })
+  ])
 
-  return json({ startMonitoring: cleared.length > 0 })
+  return json({ startMonitoring: monCleared.length > 0, stopMonitoring: relCleared.length > 0 })
 }
