@@ -27,6 +27,19 @@ export class RemoteNotifier {
     }).catch(() => {})
   }
 
+  /** Confirm to the server that monitor commands have been applied. */
+  ackMonitor(commandIds: string[]): void {
+    if (commandIds.length === 0) return
+    const { desktopId, apiKey } = this.config.getServerCredentials()
+    if (!desktopId || !apiKey) return
+
+    fetch(`${SERVER_URL}/api/monitor-ack`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ desktopId, apiKey, commandIds })
+    }).catch(() => {})
+  }
+
   /** Notify paired devices that the user is active again — clears their notification list. */
   clear(): void {
     const { desktopId, apiKey } = this.config.getServerCredentials()

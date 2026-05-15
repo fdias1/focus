@@ -31,6 +31,9 @@ export class StateManager extends EventEmitter {
   private readonly remote: RemoteNotifier
   private readonly poller: CommandPoller
 
+  private pendingMonitorTimer: NodeJS.Timeout | null = null
+  private pendingMonitorCommandIds: string[] = []
+
   constructor(private readonly config: ConfigStore) {
     super()
     this.remote = new RemoteNotifier(config)
@@ -39,8 +42,12 @@ export class StateManager extends EventEmitter {
     this.inactivity.on('active', () => this.onActive())
     this.scanner.on('frame', (frame: Frame) => this.onFrame(frame))
     this.scanner.on('permissionDenied', () => this.emit('screenPermissionDenied'))
-    this.poller.on('startMonitoring', () => this.forceMonitoring())
+    this.poller.on('startMonitoring', (ids: string[]) => this.forceMonitoring(ids))
     this.poller.on('stopMonitoring', () => this.stop())
+
+    // Poller runs at all times (incl. OFF) so remote /monitor and /release
+    // can wake the app. Airplane mode is the user-controlled kill switch.
+    if (!this.config.get().airplaneMode) this.poller.start()
   }
 
   get current(): AppState { return this._current }
@@ -51,42 +58,81 @@ export class StateManager extends EventEmitter {
       const cfg = this.config.get()
       this.wake.start()
       this.inactivity.start(cfg.inactivityThreshold)
-      this.poller.start()
     } else {
       this.stop()
     }
   }
 
   stop(): void {
+    this.cancelPendingMonitor()
     this.wake.stop()
     this.inactivity.stop()
     this.scanner.stop()
     this.alarm.reset()
     this.overlay.hideAll()
-    this.poller.stop()
     this.prevFrames.clear()
     this.lastNotifiedActive.clear()
     this.lastRemoteNotifyAt.clear()
     this.transition('off')
   }
 
+  /** Called on app quit — stop poller too. `stop()` keeps it alive on purpose. */
+  shutdown(): void {
+    this.poller.stop()
+    this.stop()
+  }
+
   /**
-   * Skip the inactivity wait and jump straight into MONITORING. Used by the
-   * tray menu, the config window button, and the Telegram `/monitor` command.
-   * No-op unless we're currently in ACTIVE — anything else is intentional state
-   * the user shouldn't be able to override mid-flight.
+   * Enter the 5-second "pending-monitor" wait, then transition to MONITORING.
+   * Works from any state, including OFF (wake lock is started on demand).
+   * During the wait, inactivity events are ignored — the tray icon goes yellow
+   * to signal "monitoring starts soon". When called for a remote command, the
+   * supplied commandIds are acked back to the server once MONITORING begins,
+   * so the Telegram handler can confirm to the user.
    */
-  forceMonitoring(): void {
-    if (this._current !== 'active') return
-    const cfg = this.config.get()
-    this.prevFrames.clear()
-    this.scanner.start(cfg.snapshotInterval)
-    this.transition('monitoring')
-    this.inactivity.armForFreshInput()
+  forceMonitoring(commandIds: string[] = []): void {
+    // Already monitoring/alarming — nothing to start, but still ack so the
+    // remote caller doesn't time out.
+    if (this._current === 'monitoring' || this._current === 'alarm') {
+      if (commandIds.length > 0) this.remote.ackMonitor(commandIds)
+      return
+    }
+    // Coalesce repeated triggers during the wait window: accumulate command IDs
+    // and let the existing timer run out.
+    if (this._current === 'pending-monitor') {
+      if (commandIds.length > 0) {
+        this.pendingMonitorCommandIds.push(...commandIds)
+      }
+      return
+    }
+
+    if (this._current === 'off') {
+      this.wake.start()
+    }
+    // Activity is ignored during the wait — user can move freely for 5s.
+    this.inactivity.stop()
+    this.pendingMonitorCommandIds = commandIds.slice()
+    this.transition('pending-monitor')
+
+    this.pendingMonitorTimer = setTimeout(() => {
+      this.pendingMonitorTimer = null
+      this.enterMonitoring()
+    }, 5000)
+  }
+
+  toggleAirplaneMode(): void {
+    const next = !this.config.get().airplaneMode
+    this.config.set({ airplaneMode: next })
+    this.applyConfig({ airplaneMode: next })
   }
 
   /** Hot-applies time-sensitive config fields while running. */
   applyConfig(partial: Partial<AppConfig>): void {
+    if (partial.airplaneMode !== undefined) {
+      if (partial.airplaneMode) this.poller.stop()
+      else this.poller.start()
+      this.emit('configChanged')
+    }
     if (this._current === 'off') return
     if (partial.inactivityThreshold !== undefined) {
       this.inactivity.start(partial.inactivityThreshold)
@@ -102,6 +148,28 @@ export class StateManager extends EventEmitter {
     }
   }
 
+  private enterMonitoring(): void {
+    if (this._current !== 'pending-monitor') return
+    const cfg = this.config.get()
+    this.prevFrames.clear()
+    this.scanner.start(cfg.snapshotInterval)
+    this.inactivity.start(cfg.inactivityThreshold)
+    this.inactivity.armForFreshInput()
+    this.transition('monitoring')
+
+    const ids = this.pendingMonitorCommandIds
+    this.pendingMonitorCommandIds = []
+    if (ids.length > 0) this.remote.ackMonitor(ids)
+  }
+
+  private cancelPendingMonitor(): void {
+    if (this.pendingMonitorTimer) {
+      clearTimeout(this.pendingMonitorTimer)
+      this.pendingMonitorTimer = null
+    }
+    this.pendingMonitorCommandIds = []
+  }
+
   private onInactive(): void {
     if (this._current !== 'active') return
     const cfg = this.config.get()
@@ -111,7 +179,7 @@ export class StateManager extends EventEmitter {
   }
 
   private onActive(): void {
-    if (this._current === 'off') return
+    if (this._current === 'off' || this._current === 'pending-monitor') return
     const wasAlarming = this._current === 'alarm'
     this.scanner.stop()
     this.alarm.reset()

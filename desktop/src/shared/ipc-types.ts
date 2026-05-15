@@ -1,4 +1,4 @@
-export type AppState = 'off' | 'active' | 'monitoring' | 'alarm'
+export type AppState = 'off' | 'active' | 'pending-monitor' | 'monitoring' | 'alarm'
 
 export interface Region {
   x: number
@@ -24,6 +24,7 @@ export interface AppConfig {
   localNotifications: boolean  // OS sound alarm, default true
   remoteNotifications: boolean // push to paired mobiles, default false
   telegramScreenshots: boolean // attach a screenshot to Telegram alerts, default false
+  airplaneMode: boolean        // disables remote command poller, default false
 }
 
 export const IPC = {

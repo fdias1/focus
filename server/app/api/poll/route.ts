@@ -1,5 +1,5 @@
 import { db } from '@/db'
-import { desktopDevices } from '@/db/schema'
+import { desktopDevices, monitorCommands } from '@/db/schema'
 import { validateDesktop, err, json } from '@/lib/auth'
 import { and, eq, isNotNull } from 'drizzle-orm'
 import { z } from 'zod'
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   // Atomic consume: clear pending_monitor_at and report whether it was set.
   // Same UPDATE+RETURNING pattern used elsewhere to avoid double-consume
   // when two pollers race (e.g. retry after a timeout).
-  const [monCleared, relCleared] = await Promise.all([
+  const [monCleared, relCleared, deliveredCommands] = await Promise.all([
     db
       .update(desktopDevices)
       .set({ pendingMonitorAt: null })
@@ -29,8 +29,20 @@ export async function POST(req: Request) {
       .update(desktopDevices)
       .set({ pendingReleaseAt: null })
       .where(and(eq(desktopDevices.id, desktopId), isNotNull(desktopDevices.pendingReleaseAt)))
-      .returning({ id: desktopDevices.id })
+      .returning({ id: desktopDevices.id }),
+    db
+      .update(monitorCommands)
+      .set({ state: 'delivered' })
+      .where(and(eq(monitorCommands.desktopId, desktopId), eq(monitorCommands.state, 'pending')))
+      .returning({ id: monitorCommands.id })
   ])
 
-  return json({ startMonitoring: monCleared.length > 0, stopMonitoring: relCleared.length > 0 })
+  const monitorCommandIds = deliveredCommands.map((c) => c.id)
+  const startMonitoring = monCleared.length > 0 || monitorCommandIds.length > 0
+
+  return json({
+    startMonitoring,
+    stopMonitoring: relCleared.length > 0,
+    monitorCommandIds
+  })
 }

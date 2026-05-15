@@ -56,7 +56,7 @@ app.whenReady().then(async () => {
 
   const state = new StateManager(config)
 
-  const tray = new TrayManager(state, () => {
+  const tray = new TrayManager(state, config, () => {
     if (configWindow) {
       configWindow.focus()
     } else {
@@ -106,7 +106,7 @@ app.whenReady().then(async () => {
 
   app.on('window-all-closed', () => { /* keep running as tray app */ })
   app.on('before-quit', () => {
-    state.stop()
+    state.shutdown()
     tray.destroy()
   })
 })

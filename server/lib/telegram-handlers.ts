@@ -1,7 +1,16 @@
 import { db } from '@/db'
-import { desktopDevices, pairingTokens, telegramChats, telegramPairings } from '@/db/schema'
+import {
+  desktopDevices,
+  monitorCommands,
+  pairingTokens,
+  telegramChats,
+  telegramPairings
+} from '@/db/schema'
 import { and, eq, gt, inArray } from 'drizzle-orm'
 import { escapeMarkdownV2 } from './telegram'
+
+const MONITOR_CONFIRM_TIMEOUT_MS = 25_000
+const MONITOR_CONFIRM_POLL_MS = 1_000
 
 function fmtId(id: string): string {
   return id.slice(0, 8)
@@ -59,33 +68,68 @@ export function helpReply(): string {
 }
 
 export async function handleMonitor(chatId: number, posArg?: string): Promise<string> {
+  let targets: Array<{ desktopId: string; nickname: string | null }>
   if (posArg !== undefined) {
     const result = await resolvePosition(chatId, posArg)
     if ('error' in result) return result.error
-    await db
-      .update(desktopDevices)
-      .set({ pendingMonitorAt: new Date() })
-      .where(eq(desktopDevices.id, result.desktopId))
-    const label = result.nickname
-      ? `*${escapeMarkdownV2(result.nickname)}*`
-      : `\`${fmtId(result.desktopId)}\``
-    return `✓ Triggered monitoring on ${label}\\.`
+    targets = [result]
+  } else {
+    targets = await db
+      .select({ desktopId: telegramPairings.desktopId, nickname: telegramPairings.nickname })
+      .from(telegramPairings)
+      .where(eq(telegramPairings.chatId, chatId))
+      .orderBy(telegramPairings.createdAt)
+    if (targets.length === 0) return 'No paired desktops\\. Use `/pair <code>` first\\.'
   }
 
-  const paired = await db
-    .select({ desktopId: telegramPairings.desktopId })
-    .from(telegramPairings)
-    .where(eq(telegramPairings.chatId, chatId))
+  // Insert one command per target. Desktop will pick them up via /api/poll
+  // and confirm via /api/monitor-ack after entering MONITORING state.
+  const inserted = await db
+    .insert(monitorCommands)
+    .values(targets.map((t) => ({ desktopId: t.desktopId, chatId })))
+    .returning({ id: monitorCommands.id, desktopId: monitorCommands.desktopId })
 
-  if (paired.length === 0) return 'No paired desktops\\. Use `/pair <code>` first\\.'
-
-  const ids = paired.map((p) => p.desktopId)
+  // Legacy signal — also flips pendingMonitorAt so older desktop builds still react.
   await db
     .update(desktopDevices)
     .set({ pendingMonitorAt: new Date() })
-    .where(inArray(desktopDevices.id, ids))
+    .where(inArray(desktopDevices.id, targets.map((t) => t.desktopId)))
 
-  return `✓ Triggered monitoring on ${ids.length} desktop\\(s\\)\\.`
+  const confirmed = await waitForConfirmations(inserted.map((c) => c.id))
+
+  const commandToDesktop = new Map(inserted.map((c) => [c.id, c.desktopId]))
+  const okDesktops = new Set<string>()
+  for (const id of confirmed) {
+    const d = commandToDesktop.get(id)
+    if (d) okDesktops.add(d)
+  }
+
+  const lines = targets.map((t) => {
+    const label = t.nickname
+      ? `*${escapeMarkdownV2(t.nickname)}*`
+      : `\`${fmtId(t.desktopId)}\``
+    return okDesktops.has(t.desktopId)
+      ? `✓ ${label} — monitoring`
+      : `✗ ${label} — no response`
+  })
+  return ['*Monitor status*', '', ...lines].join('\n')
+}
+
+async function waitForConfirmations(commandIds: string[]): Promise<Set<string>> {
+  const startedAt = Date.now()
+  let confirmed = new Set<string>()
+  while (
+    Date.now() - startedAt < MONITOR_CONFIRM_TIMEOUT_MS &&
+    confirmed.size < commandIds.length
+  ) {
+    await new Promise((r) => setTimeout(r, MONITOR_CONFIRM_POLL_MS))
+    const rows = await db
+      .select({ id: monitorCommands.id, state: monitorCommands.state })
+      .from(monitorCommands)
+      .where(inArray(monitorCommands.id, commandIds))
+    confirmed = new Set(rows.filter((r) => r.state === 'confirmed').map((r) => r.id))
+  }
+  return confirmed
 }
 
 export async function handleRelease(chatId: number, posArg?: string): Promise<string> {
