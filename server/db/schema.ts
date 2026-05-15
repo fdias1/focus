@@ -4,7 +4,8 @@ export const desktopDevices = pgTable('desktop_devices', {
   id: uuid('id').primaryKey(),
   apiKey: text('api_key').notNull().unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  pendingMonitorAt: timestamp('pending_monitor_at', { withTimezone: true })
+  pendingMonitorAt: timestamp('pending_monitor_at', { withTimezone: true }),
+  pendingReleaseAt: timestamp('pending_release_at', { withTimezone: true })
 })
 
 export const clientDevices = pgTable('client_devices', {

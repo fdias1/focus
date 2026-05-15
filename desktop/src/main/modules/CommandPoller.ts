@@ -42,8 +42,9 @@ export class CommandPoller extends EventEmitter {
         body: JSON.stringify({ desktopId, apiKey })
       })
       if (!res.ok) return
-      const body = (await res.json()) as { startMonitoring?: boolean }
+      const body = (await res.json()) as { startMonitoring?: boolean; stopMonitoring?: boolean }
       if (body.startMonitoring) this.emit('startMonitoring')
+      if (body.stopMonitoring) this.emit('stopMonitoring')
     } catch {
       /* network errors are transient — try again next tick */
     }

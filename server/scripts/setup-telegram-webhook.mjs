@@ -37,9 +37,11 @@ await call('setWebhook', {
 await call('setMyCommands', {
   commands: [
     { command: 'pair', description: 'Pair this chat with a desktop (uses code from the app)' },
-    { command: 'unpair', description: 'Remove a desktop pairing by id' },
+    { command: 'unpair', description: 'Remove a pairing by position number (from /list)' },
+    { command: 'rename', description: 'Set or clear a desktop nickname (e.g. /rename 1 My Mac)' },
     { command: 'list', description: 'List all paired desktops' },
-    { command: 'monitor', description: 'Start monitoring on all paired desktops' },
+    { command: 'monitor', description: 'Start monitoring on all (or one) paired desktop' },
+    { command: 'release', description: 'Deactivate Focus on all (or one) paired desktop' },
     { command: 'help', description: 'Show help' }
   ]
 })
