@@ -82,3 +82,27 @@ export const telegramPairings = pgTable(
   (t) => [unique().on(t.desktopId, t.chatId), index('tg_pairings_chat_idx').on(t.chatId)]
 )
 
+// Tracks each /monitor invocation per desktop. State machine:
+//   pending → delivered (consumed by /api/poll) → confirmed (acked by desktop)
+// Used so /monitor in Telegram waits for actual desktop confirmation before
+// replying to the user.
+export const monitorCommands = pgTable(
+  'monitor_commands',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    desktopId: uuid('desktop_id')
+      .notNull()
+      .references(() => desktopDevices.id, { onDelete: 'cascade' }),
+    chatId: bigint('chat_id', { mode: 'number' })
+      .notNull()
+      .references(() => telegramChats.chatId, { onDelete: 'cascade' }),
+    state: text('state').notNull().default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true })
+  },
+  (t) => [
+    index('monitor_commands_desktop_state_idx').on(t.desktopId, t.state),
+    index('monitor_commands_chat_idx').on(t.chatId)
+  ]
+)
+

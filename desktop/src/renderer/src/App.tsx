@@ -4,6 +4,7 @@ import { AppConfig, AppState, PairResult, WatchArea } from '../../shared/ipc-typ
 const STATE_LABEL: Record<AppState, string> = {
   off: 'Off',
   active: 'Active',
+  'pending-monitor': 'Starting…',
   monitoring: 'Monitoring',
   alarm: 'Alarm'
 }
@@ -11,6 +12,7 @@ const STATE_LABEL: Record<AppState, string> = {
 const STATE_COLOR: Record<AppState, string> = {
   off: '#6b7280',
   active: '#22c55e',
+  'pending-monitor': '#facc15',
   monitoring: '#3b82f6',
   alarm: '#ef4444'
 }
@@ -51,7 +53,8 @@ export default function App() {
     watchAreas: [],
     localNotifications: true,
     remoteNotifications: false,
-    telegramScreenshots: false
+    telegramScreenshots: false,
+    airplaneMode: false
   })
   const [displays, setDisplays] = useState<DisplayInfo[]>([])
   const [selecting, setSelecting] = useState(false)
@@ -127,8 +130,7 @@ export default function App() {
       </button>
 
       <button
-        style={{ ...styles.toggle, opacity: state === 'active' ? 1 : 0.4 }}
-        disabled={state !== 'active'}
+        style={styles.toggle}
         onClick={() => window.focusApp.forceMonitoring()}
       >
         Start Monitoring Now
@@ -230,6 +232,12 @@ export default function App() {
             onChange={(v) => updateConfig({ telegramScreenshots: v })}
           />
         )}
+
+        <Toggle
+          label="Airplane mode (block remote commands)"
+          checked={config.airplaneMode}
+          onChange={(v) => updateConfig({ airplaneMode: v })}
+        />
 
         {/* Watch areas */}
         <div style={styles.sectionHeader}>Monitoring</div>

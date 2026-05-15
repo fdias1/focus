@@ -1,11 +1,13 @@
 import { Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 import { AppState } from '../../shared/ipc-types'
+import { ConfigStore } from './ConfigStore'
 import { StateManager } from './StateManager'
 
 const ICON_MAP: Record<AppState, string> = {
   off: 'tray-off.png',
   active: 'tray-active.png',
+  'pending-monitor': 'tray-pending.png',
   monitoring: 'tray-monitoring.png',
   alarm: 'tray-alarm.png'
 }
@@ -15,12 +17,14 @@ export class TrayManager {
 
   constructor(
     private readonly state: StateManager,
+    private readonly config: ConfigStore,
     private readonly openSettings: () => void
   ) {
     const icon = this.iconFor(state.current)
     this.tray = new Tray(icon)
     this.tray.setToolTip('Focus')
     this.buildMenu()
+    state.on('configChanged', () => this.buildMenu())
   }
 
   update(newState: AppState): void {
@@ -41,8 +45,13 @@ export class TrayManager {
       },
       {
         label: 'Start Monitoring Now',
-        enabled: this.state.current === 'active',
         click: () => this.state.forceMonitoring()
+      },
+      {
+        label: 'Airplane Mode',
+        type: 'checkbox',
+        checked: this.config.get().airplaneMode,
+        click: () => this.state.toggleAirplaneMode()
       },
       { label: 'Settings...', click: () => this.openSettings() },
       { type: 'separator' },

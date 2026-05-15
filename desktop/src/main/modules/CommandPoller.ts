@@ -5,12 +5,16 @@ import { SERVER_URL } from './constants'
 const POLL_INTERVAL_MS = 5_000
 
 /**
- * Polls the server for pending commands targeted at this desktop. The only
- * command currently is `startMonitoring`, triggered by `/monitor` in Telegram.
+ * Polls the server for pending commands targeted at this desktop. Commands
+ * are issued by the Telegram bot (e.g. /monitor, /release) and consumed
+ * atomically server-side, so a successful poll delivers exactly once.
  *
- * Errors are swallowed — a failed poll just retries on the next tick. The
- * server endpoint is idempotent: it consumes the pending flag atomically, so
- * a missed response just delays delivery to the next successful poll.
+ * Emits:
+ *   - 'startMonitoring' (commandIds: string[]) — desktop must enter monitor
+ *     mode and ack each commandId via RemoteNotifier.ackMonitor() once it
+ *     does. An empty array means "force monitor without confirmation"
+ *     (legacy /monitor signal).
+ *   - 'stopMonitoring' — desktop must enter OFF mode.
  */
 export class CommandPoller extends EventEmitter {
   private timer: NodeJS.Timeout | null = null
@@ -42,8 +46,13 @@ export class CommandPoller extends EventEmitter {
         body: JSON.stringify({ desktopId, apiKey })
       })
       if (!res.ok) return
-      const body = (await res.json()) as { startMonitoring?: boolean; stopMonitoring?: boolean }
-      if (body.startMonitoring) this.emit('startMonitoring')
+      const body = (await res.json()) as {
+        startMonitoring?: boolean
+        stopMonitoring?: boolean
+        monitorCommandIds?: string[]
+      }
+      const ids = body.monitorCommandIds ?? []
+      if (body.startMonitoring || ids.length > 0) this.emit('startMonitoring', ids)
       if (body.stopMonitoring) this.emit('stopMonitoring')
     } catch {
       /* network errors are transient — try again next tick */
