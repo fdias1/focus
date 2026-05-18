@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC, AppConfig, AppState, PairResult, WatchArea } from '../shared/ipc-types'
 
+
 export interface DisplayInfo {
   id: number
   index: number
@@ -33,5 +34,9 @@ contextBridge.exposeInMainWorld('focusApp', {
   onScreenPermissionDenied: (cb: () => void) => {
     ipcRenderer.on(IPC.SCREEN_PERMISSION_DENIED, cb)
     return () => ipcRenderer.removeAllListeners(IPC.SCREEN_PERMISSION_DENIED)
-  }
+  },
+  getAccessibilityPermission: (): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.GET_ACCESSIBILITY_PERMISSION),
+  openAccessibilitySettings: (): Promise<void> =>
+    ipcRenderer.invoke(IPC.OPEN_ACCESSIBILITY_SETTINGS)
 })

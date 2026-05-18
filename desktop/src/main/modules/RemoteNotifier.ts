@@ -1,24 +1,16 @@
 import { ConfigStore } from './ConfigStore'
 import { SERVER_URL } from './constants'
 
-/**
- * Sends push events to all paired mobile/web clients.
- * All calls are fire-and-forget — errors are silently swallowed.
- */
 export class RemoteNotifier {
   constructor(private readonly config: ConfigStore) {}
 
-  /**
-   * Notify paired devices that a screen change was detected. When `pngBuffer`
-   * is provided, the server forwards it as an attached photo to Telegram chats
-   * (web-push subscribers still receive the same text-only payload).
-   */
-  notify(pngBuffer?: Buffer): void {
+  notify(pngBuffer?: Buffer, remoteLink?: string): void {
     const { desktopId, apiKey } = this.config.getServerCredentials()
     if (!desktopId || !apiKey) return
 
     const body: Record<string, unknown> = { desktopId, apiKey }
     if (pngBuffer) body.imageBase64 = pngBuffer.toString('base64')
+    if (remoteLink) body.remoteLink = remoteLink
 
     fetch(`${SERVER_URL}/api/notify`, {
       method: 'POST',
@@ -27,7 +19,6 @@ export class RemoteNotifier {
     }).catch(() => {})
   }
 
-  /** Confirm to the server that monitor commands have been applied. */
   ackMonitor(commandIds: string[]): void {
     if (commandIds.length === 0) return
     const { desktopId, apiKey } = this.config.getServerCredentials()
@@ -40,7 +31,6 @@ export class RemoteNotifier {
     }).catch(() => {})
   }
 
-  /** Notify paired devices that the user is active again — clears their notification list. */
   clear(): void {
     const { desktopId, apiKey } = this.config.getServerCredentials()
     if (!desktopId || !apiKey) return

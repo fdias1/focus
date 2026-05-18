@@ -14,7 +14,8 @@ import { z } from 'zod'
 const Body = z.object({
   desktopId: z.string().uuid(),
   apiKey: z.string().min(1),
-  imageBase64: z.string().optional()
+  imageBase64: z.string().optional(),
+  remoteLink: z.string().url().optional()
 })
 
 export async function POST(req: Request) {
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
   const photo = parsed.data.imageBase64
     ? Buffer.from(parsed.data.imageBase64, 'base64')
     : null
+
+  const { remoteLink } = parsed.data
 
   const paired = await db
     .select({
@@ -95,7 +98,12 @@ export async function POST(req: Request) {
   const tgDispatch = Promise.all(
     tgPaired.map(async (p) => {
       const label = p.nickname ? `"${p.nickname}"` : desktopLabel
-      const text = `🔔 *Focus* \\— change detected on ${escapeMarkdownV2(label)}`
+      const baseText = `🔔 *Focus* \\— change detected on ${escapeMarkdownV2(label)}`
+      // Inside a MarkdownV2 link URL, only backslash and ) need escaping.
+      const escapedUrl = remoteLink?.replace(/[\\)]/g, '\\$&')
+      const text = escapedUrl
+        ? `${baseText}\n[🖥 Control remotely](${escapedUrl})`
+        : baseText
       const res = photo
         ? await sendTelegramPhoto(p.chatId, photo, text)
         : await sendTelegramMessage(p.chatId, text)
