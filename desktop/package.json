@@ -17,7 +17,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@nut-tree/nut-js": "^3.3.0",
     "@types/qrcode": "^1.5.6",
     "electron-store": "^8.1.0",
     "qrcode": "^1.5.4",
