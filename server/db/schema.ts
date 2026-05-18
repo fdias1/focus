@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, unique, index, bigint } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, uuid, unique, index, bigint, boolean } from 'drizzle-orm/pg-core'
 
 export const desktopDevices = pgTable('desktop_devices', {
   id: uuid('id').primaryKey(),
@@ -80,6 +80,33 @@ export const telegramPairings = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
   },
   (t) => [unique().on(t.desktopId, t.chatId), index('tg_pairings_chat_idx').on(t.chatId)]
+)
+
+// Remote control sessions — created when an alarm fires, used for WebRTC signaling.
+// Stores SDP offer/answer and ICE candidates as JSON so the desktop renderer and
+// mobile browser can exchange them via HTTP polling without a WebSocket server.
+export const remoteSessions = pgTable(
+  'remote_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    desktopId: uuid('desktop_id')
+      .notNull()
+      .references(() => desktopDevices.id, { onDelete: 'cascade' }),
+    token: text('token').notNull().unique(),
+    displayId: bigint('display_id', { mode: 'number' }).notNull(),
+    // WebRTC signaling state — JSON strings
+    desktopOffer: text('desktop_offer'),
+    mobileAnswer: text('mobile_answer'),
+    desktopIce: text('desktop_ice').notNull().default('[]'),
+    mobileIce: text('mobile_ice').notNull().default('[]'),
+    connected: boolean('connected').notNull().default(false),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
+  },
+  (t) => [
+    index('remote_sessions_desktop_idx').on(t.desktopId),
+    index('remote_sessions_token_idx').on(t.token)
+  ]
 )
 
 // Tracks each /monitor invocation per desktop. State machine:

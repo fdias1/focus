@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, screen, shell, systemPreferences } from 'electron'
 import { join } from 'path'
 import { ConfigStore } from './modules/ConfigStore'
 import { StateManager } from './modules/StateManager'
@@ -92,6 +92,17 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.PAIR_DEVICE, async () => openQRWindow(config))
   ipcMain.handle(IPC.GET_SCREEN_PERMISSION, () => getScreenPermissionStatus())
   ipcMain.handle(IPC.OPEN_SCREEN_SETTINGS, () => requestScreenPermission())
+  ipcMain.handle(IPC.GET_ACCESSIBILITY_PERMISSION, () => {
+    if (process.platform !== 'darwin') return true
+    return systemPreferences.isTrustedAccessibilityClient(false)
+  })
+  ipcMain.handle(IPC.OPEN_ACCESSIBILITY_SETTINGS, () => {
+    if (process.platform === 'darwin') {
+      systemPreferences.isTrustedAccessibilityClient(true)
+    } else {
+      shell.openExternal('ms-settings:privacy-accessibility')
+    }
+  })
 
   state.on('stateChanged', (newState) => {
     tray.update(newState)

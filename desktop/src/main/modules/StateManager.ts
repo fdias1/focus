@@ -10,6 +10,8 @@ import { AlarmManager } from './AlarmManager'
 import { OverlayManager } from './OverlayManager'
 import { RemoteNotifier } from './RemoteNotifier'
 import { CommandPoller } from './CommandPoller'
+import { RemoteControlManager } from './RemoteControlManager'
+import { SERVER_URL } from './constants'
 
 export { getScreenPermissionStatus }
 
@@ -30,6 +32,7 @@ export class StateManager extends EventEmitter {
   private readonly overlay = new OverlayManager()
   private readonly remote: RemoteNotifier
   private readonly poller: CommandPoller
+  private readonly remoteControl: RemoteControlManager
 
   private pendingMonitorTimer: NodeJS.Timeout | null = null
   private pendingMonitorCommandIds: string[] = []
@@ -38,6 +41,7 @@ export class StateManager extends EventEmitter {
     super()
     this.remote = new RemoteNotifier(config)
     this.poller = new CommandPoller(config)
+    this.remoteControl = new RemoteControlManager(config)
     this.inactivity.on('inactive', () => this.onInactive())
     this.inactivity.on('active', () => this.onActive())
     this.scanner.on('frame', (frame: Frame) => this.onFrame(frame))
@@ -73,6 +77,7 @@ export class StateManager extends EventEmitter {
     this.prevFrames.clear()
     this.lastNotifiedActive.clear()
     this.lastRemoteNotifyAt.clear()
+    this.remoteControl.stopSession()
     this.transition('off')
   }
 
@@ -233,7 +238,17 @@ export class StateManager extends EventEmitter {
           // First change → trigger alarm and send the initial notification.
           if (cfg.remoteNotifications) {
             const png = cfg.telegramScreenshots ? frame.image.toPNG() : undefined
-            this.remote.notify(png)
+            if (cfg.remoteControl) {
+              // Create a remote session asynchronously; include the link in the notify call.
+              this.remoteControl.startSession(frame.display.id)
+                .then((token) => {
+                  const remoteLink = token ? `${SERVER_URL}/remote/${token}` : undefined
+                  this.remote.notify(png, remoteLink)
+                })
+                .catch(() => this.remote.notify(png))
+            } else {
+              this.remote.notify(png)
+            }
             if (result.grid) {
               this.lastNotifiedActive.set(frame.display.id, new Uint8Array(result.grid.active))
             }

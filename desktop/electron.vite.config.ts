@@ -17,7 +17,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/preload/index.ts'),
-          selector: resolve('src/preload/selector.ts')
+          selector: resolve('src/preload/selector.ts'),
+          'remote-peer': resolve('src/preload/remote-peer.ts')
         }
       }
     }
@@ -27,6 +28,14 @@ export default defineConfig({
     resolve: {
       alias: {
         '@shared': resolve('src/shared')
+      }
+    },
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          'remote-peer': resolve('src/renderer/remote-peer/index.html')
+        }
       }
     }
   }

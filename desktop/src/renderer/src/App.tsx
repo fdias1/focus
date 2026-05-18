@@ -39,6 +39,8 @@ declare global {
       openScreenSettings: () => Promise<void>
       onScreenPermissionDenied: (cb: () => void) => () => void
       onStateChanged: (cb: (state: AppState) => void) => () => void
+      getAccessibilityPermission: () => Promise<boolean>
+      openAccessibilitySettings: () => Promise<void>
     }
   }
 }
@@ -54,7 +56,8 @@ export default function App() {
     localNotifications: true,
     remoteNotifications: false,
     telegramScreenshots: false,
-    airplaneMode: false
+    airplaneMode: false,
+    remoteControl: false
   })
   const [displays, setDisplays] = useState<DisplayInfo[]>([])
   const [selecting, setSelecting] = useState(false)
@@ -62,6 +65,7 @@ export default function App() {
   const [pairError, setPairError] = useState('')
   const [pairing, setPairing] = useState(false)
   const [screenPermission, setScreenPermission] = useState<'granted' | 'denied' | 'not-determined' | null>(null)
+  const [accessibilityGranted, setAccessibilityGranted] = useState<boolean | null>(null)
 
   useEffect(() => {
     window.focusApp.getState().then(setState)
@@ -69,6 +73,7 @@ export default function App() {
     window.focusApp.getDisplays().then(setDisplays)
     window.focusApp.getDesktopId().then(setDesktopId)
     window.focusApp.getScreenPermission().then(setScreenPermission)
+    window.focusApp.getAccessibilityPermission().then(setAccessibilityGranted)
     const unsubState = window.focusApp.onStateChanged(setState)
     const unsubPerm = window.focusApp.onScreenPermissionDenied(() => setScreenPermission('denied'))
     return () => {
@@ -231,6 +236,36 @@ export default function App() {
             checked={config.telegramScreenshots}
             onChange={(v) => updateConfig({ telegramScreenshots: v })}
           />
+        )}
+
+        {config.remoteNotifications && (
+          <>
+            <Toggle
+              label="Remote control (include link in alerts)"
+              checked={config.remoteControl}
+              onChange={(v) => {
+                updateConfig({ remoteControl: v })
+                if (v) window.focusApp.getAccessibilityPermission().then(setAccessibilityGranted)
+              }}
+            />
+            {config.remoteControl && accessibilityGranted === false && (
+              <div style={styles.permissionBanner}>
+                <span style={styles.permissionText}>
+                  ⚠ Accessibility permission required for mouse/keyboard control.
+                </span>
+                <button
+                  style={styles.permissionBtn}
+                  onClick={() =>
+                    window.focusApp.openAccessibilitySettings().then(() =>
+                      window.focusApp.getAccessibilityPermission().then(setAccessibilityGranted)
+                    )
+                  }
+                >
+                  Open Settings
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         <Toggle

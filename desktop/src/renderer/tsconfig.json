@@ -1,6 +1,6 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
-  "include": ["src/**/*", "../shared/**/*"],
+  "include": ["src/**/*", "remote-peer/**/*", "../shared/**/*"],
   "compilerOptions": {
     "composite": true,
     "baseUrl": ".",

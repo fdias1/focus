@@ -25,6 +25,7 @@ export interface AppConfig {
   remoteNotifications: boolean // push to paired mobiles, default false
   telegramScreenshots: boolean // attach a screenshot to Telegram alerts, default false
   airplaneMode: boolean        // disables remote command poller, default false
+  remoteControl: boolean       // include a remote-control link in alarm notifications, default false
 }
 
 export const IPC = {
@@ -40,7 +41,9 @@ export const IPC = {
   GET_SCREEN_PERMISSION: 'focus:get-screen-permission',
   OPEN_SCREEN_SETTINGS: 'focus:open-screen-settings',
   SCREEN_PERMISSION_DENIED: 'focus:screen-permission-denied',
-  GET_DISPLAYS: 'focus:get-displays'
+  GET_DISPLAYS: 'focus:get-displays',
+  GET_ACCESSIBILITY_PERMISSION: 'focus:get-accessibility-permission',
+  OPEN_ACCESSIBILITY_SETTINGS: 'focus:open-accessibility-settings'
 } as const
 
 export interface PairResult {
